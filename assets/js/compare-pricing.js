@@ -18,16 +18,15 @@ jQuery(document).ready(function($) {
             '</div>'
         );
         
-        // Make AJAX request to get eBay price
+        // Make AJAX request to get price comparison
         $.ajax({
-            url: compare_pricing_ajax.ajax_url,
+            url: comparePricing.ajax_url,
             type: 'POST',
             data: {
                 action: 'compare_pricing',
-                nonce: compare_pricing_ajax.nonce,
+                nonce: comparePricing.nonce,
                 gtin: gtin,
-                product_id: productId,
-                product_name: productName
+                product_id: productId
             },
             success: function(response) {
                 if (response.success) {

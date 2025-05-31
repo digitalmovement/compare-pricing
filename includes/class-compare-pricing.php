@@ -147,18 +147,38 @@ class Compare_Pricing {
                 return;
             }
 
-            // Validate required data
-            if (empty($_POST['product_name'])) {
-                wp_send_json_error('Product name is required');
+            // Get GTIN from request
+            $gtin = sanitize_text_field($_POST['gtin']);
+            $product_id = sanitize_text_field($_POST['product_id']);
+
+            if (empty($gtin)) {
+                wp_send_json_error('GTIN is required');
                 return;
             }
 
-            $product_name = sanitize_text_field($_POST['product_name']);
+            // Get eBay results using GTIN
+            $ebay_results = $this->ebay_api->search_products($gtin, 1);
             
-            // existing code for API calls...
+            if (is_wp_error($ebay_results)) {
+                wp_send_json_error('eBay API Error: ' . $ebay_results->get_error_message());
+                return;
+            }
+
+            if (empty($ebay_results)) {
+                wp_send_json_error('No results found');
+                return;
+            }
+
+            // Get the first (best) result
+            $best_result = $ebay_results[0];
             
             // Send success response
-            wp_send_json_success($comparison_data);
+            wp_send_json_success(array(
+                'price' => $best_result['price'],
+                'url' => $best_result['url'],
+                'title' => $best_result['title'],
+                'cached' => false // You can implement caching logic here
+            ));
             
         } catch (Exception $e) {
             wp_send_json_error('An error occurred: ' . $e->getMessage());
