@@ -363,4 +363,15 @@ class Compare_Pricing {
         echo '</div>';
         echo '</div>';
     }
+    
+    private function get_api_options() {
+        return array(
+            'ebay_app_id' => get_option('compare_pricing_ebay_app_id'),
+            'ebay_cert_id' => get_option('compare_pricing_ebay_cert_id'),
+            'ebay_dev_id' => get_option('compare_pricing_ebay_dev_id'),
+            'amazon_api_key' => get_option('compare_pricing_amazon_api_key'),
+            'sandbox_mode' => get_option('compare_pricing_sandbox_mode', 0),
+            'debug_mode' => get_option('compare_pricing_debug_mode', 0)
+        );
+    }
 } 
