@@ -41,10 +41,12 @@ require_once COMPARE_PRICING_PATH . 'includes/class-amazon-api.php';
 function init_compare_pricing() {
     new Compare_Pricing();
     
-    // Only include admin class if in admin area
-    if (is_admin()) {
+    // Only include admin class if in admin area and file exists
+    if (is_admin() && file_exists(COMPARE_PRICING_PATH . 'admin/class-admin.php')) {
         require_once COMPARE_PRICING_PATH . 'admin/class-admin.php';
-        new Compare_Pricing_Admin();
+        if (class_exists('Compare_Pricing_Admin')) {
+            new Compare_Pricing_Admin();
+        }
     }
 }
 add_action('plugins_loaded', 'init_compare_pricing');

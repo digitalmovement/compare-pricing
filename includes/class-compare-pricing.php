@@ -140,31 +140,48 @@ class Compare_Pricing {
     }
     
     public function handle_ajax_compare() {
+        // Enable error logging for debugging
+        error_log('Compare Pricing AJAX called');
+        
         try {
             // Verify nonce
-            if (!wp_verify_nonce($_POST['nonce'], 'compare_pricing_nonce')) {
+            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'compare_pricing_nonce')) {
+                error_log('Compare Pricing: Nonce verification failed');
                 wp_send_json_error('Security check failed');
                 return;
             }
 
             // Get GTIN from request
-            $gtin = sanitize_text_field($_POST['gtin']);
-            $product_id = sanitize_text_field($_POST['product_id']);
+            $gtin = isset($_POST['gtin']) ? sanitize_text_field($_POST['gtin']) : '';
+            $product_id = isset($_POST['product_id']) ? sanitize_text_field($_POST['product_id']) : '';
+
+            error_log('Compare Pricing: GTIN = ' . $gtin . ', Product ID = ' . $product_id);
 
             if (empty($gtin)) {
+                error_log('Compare Pricing: GTIN is empty');
                 wp_send_json_error('GTIN is required');
                 return;
             }
 
+            // Check if eBay API class exists
+            if (!$this->ebay_api) {
+                error_log('Compare Pricing: eBay API not initialized');
+                wp_send_json_error('eBay API not available');
+                return;
+            }
+
             // Get eBay results using GTIN
+            error_log('Compare Pricing: Calling eBay API with GTIN: ' . $gtin);
             $ebay_results = $this->ebay_api->search_products($gtin, 1);
             
             if (is_wp_error($ebay_results)) {
+                error_log('Compare Pricing: eBay API Error - ' . $ebay_results->get_error_message());
                 wp_send_json_error('eBay API Error: ' . $ebay_results->get_error_message());
                 return;
             }
 
             if (empty($ebay_results)) {
+                error_log('Compare Pricing: No eBay results found');
                 wp_send_json_error('No results found');
                 return;
             }
@@ -172,16 +189,22 @@ class Compare_Pricing {
             // Get the first (best) result
             $best_result = $ebay_results[0];
             
+            error_log('Compare Pricing: Success - Price: ' . $best_result['price']);
+            
             // Send success response
             wp_send_json_success(array(
                 'price' => $best_result['price'],
                 'url' => $best_result['url'],
                 'title' => $best_result['title'],
-                'cached' => false // You can implement caching logic here
+                'cached' => false
             ));
             
         } catch (Exception $e) {
+            error_log('Compare Pricing Exception: ' . $e->getMessage());
             wp_send_json_error('An error occurred: ' . $e->getMessage());
+        } catch (Error $e) {
+            error_log('Compare Pricing Fatal Error: ' . $e->getMessage());
+            wp_send_json_error('A fatal error occurred: ' . $e->getMessage());
         }
     }
     

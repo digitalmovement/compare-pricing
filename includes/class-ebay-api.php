@@ -8,9 +8,11 @@ class Compare_Pricing_eBay_API {
     private $sandbox = false; // Set to true for testing
     
     public function __construct() {
-        $this->app_id = get_option('compare_pricing_ebay_app_id');
-        $this->cert_id = get_option('compare_pricing_ebay_cert_id');
+        $options = get_option('compare_pricing_options', array());
+        $this->app_id = isset($options['ebay_app_id']) ? $options['ebay_app_id'] : '';
+        $this->cert_id = isset($options['ebay_cert_id']) ? $options['ebay_cert_id'] : '';
         $this->dev_id = get_option('compare_pricing_ebay_dev_id');
+        $this->sandbox = isset($options['sandbox_mode']) ? $options['sandbox_mode'] : false;
     }
     
     public function search_by_gtin($gtin) {
@@ -374,5 +376,113 @@ class Compare_Pricing_eBay_API {
     // Method to get current environment
     public function get_environment() {
         return $this->sandbox ? 'Sandbox' : 'Production';
+    }
+    
+    /**
+     * Search for products on eBay
+     * 
+     * @param string $search_term The search term or GTIN
+     * @param int $limit Number of results to return
+     * @return array|WP_Error Array of products or error
+     */
+    public function search_products($search_term, $limit = 5) {
+        // Check if we have required credentials
+        if (empty($this->app_id)) {
+            return new WP_Error('missing_credentials', 'eBay App ID is required');
+        }
+        
+        // Check cache first
+        $cache_key = 'ebay_search_' . md5($search_term . $limit);
+        $cached_result = get_transient($cache_key);
+        
+        if ($cached_result !== false) {
+            return $cached_result;
+        }
+        
+        // Prepare API request
+        $endpoint = $this->sandbox ? 
+            'https://svcs.sandbox.ebay.com/services/search/FindingService/v1' :
+            'https://svcs.ebay.com/services/search/FindingService/v1';
+        
+        $params = array(
+            'OPERATION-NAME' => 'findItemsByKeywords',
+            'SERVICE-VERSION' => '1.0.0',
+            'SECURITY-APPNAME' => $this->app_id,
+            'RESPONSE-DATA-FORMAT' => 'JSON',
+            'REST-PAYLOAD' => '',
+            'keywords' => $search_term,
+            'paginationInput.entriesPerPage' => $limit,
+            'sortOrder' => 'PricePlusShippingLowest'
+        );
+        
+        // Build query string
+        $query_string = http_build_query($params);
+        $url = $endpoint . '?' . $query_string;
+        
+        // Make API request
+        $response = wp_remote_get($url, array(
+            'timeout' => 30,
+            'headers' => array(
+                'User-Agent' => 'Compare-Pricing-Plugin/1.0'
+            )
+        ));
+        
+        if (is_wp_error($response)) {
+            return $response;
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return new WP_Error('json_error', 'Invalid JSON response from eBay API');
+        }
+        
+        // Parse results
+        $products = $this->parse_ebay_response($data);
+        
+        // Cache results for 1 hour
+        set_transient($cache_key, $products, HOUR_IN_SECONDS);
+        
+        return $products;
+    }
+    
+    /**
+     * Parse eBay API response
+     */
+    private function parse_ebay_response($data) {
+        $products = array();
+        
+        if (!isset($data['findItemsByKeywordsResponse'][0]['searchResult'][0]['item'])) {
+            return $products;
+        }
+        
+        $items = $data['findItemsByKeywordsResponse'][0]['searchResult'][0]['item'];
+        
+        foreach ($items as $item) {
+            $product = array(
+                'title' => isset($item['title'][0]) ? $item['title'][0] : 'No title',
+                'price' => 0,
+                'url' => isset($item['viewItemURL'][0]) ? $item['viewItemURL'][0] : '',
+                'image' => '',
+                'source' => 'ebay',
+                'rating' => 0,
+                'review_count' => 0
+            );
+            
+            // Get price
+            if (isset($item['sellingStatus'][0]['currentPrice'][0]['__value__'])) {
+                $product['price'] = floatval($item['sellingStatus'][0]['currentPrice'][0]['__value__']);
+            }
+            
+            // Get image
+            if (isset($item['galleryURL'][0])) {
+                $product['image'] = $item['galleryURL'][0];
+            }
+            
+            $products[] = $product;
+        }
+        
+        return $products;
     }
 } 
