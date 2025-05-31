@@ -147,13 +147,9 @@ class Compare_Pricing {
     }
     
     public function handle_ajax_compare() {
-        // Enable error logging for debugging
-        error_log('Compare Pricing AJAX called');
-        
         try {
             // Verify nonce
             if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'compare_pricing_nonce')) {
-                error_log('Compare Pricing: Nonce verification failed');
                 wp_send_json_error('Security check failed');
                 return;
             }
@@ -162,182 +158,23 @@ class Compare_Pricing {
             $gtin = isset($_POST['gtin']) ? sanitize_text_field($_POST['gtin']) : '';
             $product_id = isset($_POST['product_id']) ? sanitize_text_field($_POST['product_id']) : '';
 
-            error_log('Compare Pricing: GTIN = ' . $gtin . ', Product ID = ' . $product_id);
-
             if (empty($gtin)) {
-                error_log('Compare Pricing: GTIN is empty');
                 wp_send_json_error('GTIN is required');
                 return;
             }
 
-            // Get WooCommerce product title for matching
-            $wc_product_title = $this->get_wc_product_title($product_id);
-            error_log('Compare Pricing: WC Product Title = ' . $wc_product_title);
-
-            $all_results = array();
-            $filtered_results = array();
-            $errors = array();
-            $api_attempts = 0;
-            $successful_apis = 0;
-            $filtering_stats = array(
-                'total_found' => 0,
-                'relevant_found' => 0,
-                'ebay_total' => 0,
-                'ebay_relevant' => 0,
-                'amazon_total' => 0,
-                'amazon_relevant' => 0
-            );
-
-            // Try eBay API
-            if ($this->ebay_api) {
-                $api_attempts++;
-                error_log('Compare Pricing: Calling eBay API with GTIN: ' . $gtin);
-                $ebay_results = $this->ebay_api->search_products($gtin, 10); // Get more results for filtering
-                
-                if (is_wp_error($ebay_results)) {
-                    error_log('Compare Pricing: eBay API Error - ' . $ebay_results->get_error_message());
-                    $errors['ebay'] = $ebay_results->get_error_message();
-                } elseif (!empty($ebay_results)) {
-                    $all_results = array_merge($all_results, $ebay_results);
-                    $successful_apis++;
-                    $filtering_stats['ebay_total'] = count($ebay_results);
-                    
-                    // Filter eBay results for relevance
-                    if (!empty($wc_product_title)) {
-                        foreach ($ebay_results as $result) {
-                            if ($this->is_relevant_product($result['title'], $wc_product_title)) {
-                                $filtered_results[] = $result;
-                                $filtering_stats['ebay_relevant']++;
-                            }
-                        }
-                    } else {
-                        // If no WC product title, include all results
-                        $filtered_results = array_merge($filtered_results, $ebay_results);
-                        $filtering_stats['ebay_relevant'] = count($ebay_results);
-                    }
-                    
-                    error_log('Compare Pricing: Found ' . count($ebay_results) . ' eBay results, ' . $filtering_stats['ebay_relevant'] . ' relevant');
-                } else {
-                    error_log('Compare Pricing: eBay API returned empty results');
-                    $errors['ebay'] = 'No results found on eBay';
-                }
-            } else {
-                error_log('Compare Pricing: eBay API not initialized');
-                $errors['ebay'] = 'eBay API not configured';
-            }
-
-            // Try Amazon API
-            if ($this->amazon_api) {
-                $api_attempts++;
-                error_log('Compare Pricing: Calling Amazon API with GTIN: ' . $gtin);
-                $amazon_result = $this->amazon_api->search_products($gtin, 10); // Get more results for filtering
-
-                if ($amazon_result['success'] && !empty($amazon_result['products'])) {
-                    $all_results = array_merge($all_results, $amazon_result['products']);
-                    $successful_apis++;
-                    $filtering_stats['amazon_total'] = count($amazon_result['products']);
-                    
-                    // Filter Amazon results for relevance
-                    if (!empty($wc_product_title)) {
-                        foreach ($amazon_result['products'] as $result) {
-                            if ($this->is_relevant_product($result['title'], $wc_product_title)) {
-                                $filtered_results[] = $result;
-                                $filtering_stats['amazon_relevant']++;
-                            }
-                        }
-                    } else {
-                        // If no WC product title, include all results
-                        $filtered_results = array_merge($filtered_results, $amazon_result['products']);
-                        $filtering_stats['amazon_relevant'] = count($amazon_result['products']);
-                    }
-                    
-                    error_log('Compare Pricing: Found ' . count($amazon_result['products']) . ' Amazon results, ' . $filtering_stats['amazon_relevant'] . ' relevant');
-                } elseif (!$amazon_result['success']) {
-                    error_log('Compare Pricing: Amazon API Error - ' . $amazon_result['error']);
-                    $errors['amazon'] = $amazon_result['error'];
-                } else {
-                    error_log('Compare Pricing: Amazon API returned empty results');
-                    $errors['amazon'] = 'No results found on Amazon';
-                }
-            } else {
-                error_log('Compare Pricing: Amazon API not initialized');
-                $errors['amazon'] = 'Amazon API not configured';
-            }
-
-            // Update total stats
-            $filtering_stats['total_found'] = count($all_results);
-            $filtering_stats['relevant_found'] = count($filtered_results);
-
-            // Use filtered results for final output
-            $final_results = $filtered_results;
-
-            // Only fail if NO APIs worked AND we have no results
-            if (empty($final_results)) {
-                $error_message = 'No relevant results found';
-                
-                if ($api_attempts === 0) {
-                    $error_message = 'No APIs are configured';
-                } elseif ($successful_apis === 0) {
-                    $error_message = 'All APIs failed or returned no results';
-                    if (!empty($errors)) {
-                        $error_message .= '. Errors: ' . implode(', ', $errors);
-                    }
-                } elseif ($filtering_stats['total_found'] > 0) {
-                    $error_message = 'Found ' . $filtering_stats['total_found'] . ' products but none matched your product';
-                    if (empty($wc_product_title)) {
-                        $error_message .= ' (no product title available for matching)';
-                    }
-                }
-                
-                error_log('Compare Pricing: ' . $error_message);
-                wp_send_json_error($error_message);
-                return;
-            }
-
-            // Sort all results by price (lowest first)
-            usort($final_results, function($a, $b) {
-                return $a['price'] <=> $b['price'];
-            });
-
-            // Get the best deals from each platform
-            $ebay_best = null;
-            $amazon_best = null;
-            $overall_best = $final_results[0];
-
-            foreach ($final_results as $result) {
-                if ($result['source'] === 'ebay' && !$ebay_best) {
-                    $ebay_best = $result;
-                }
-                if ($result['source'] === 'amazon' && !$amazon_best) {
-                    $amazon_best = $result;
-                }
-                if ($ebay_best && $amazon_best) break;
-            }
-
-            error_log('Compare Pricing: Success - Best price: $' . $overall_best['price'] . ' from ' . $overall_best['source']);
+            // Get cached or fresh results
+            $result = $this->get_cached_or_fetch_results($gtin, $product_id);
             
-            // Send success response with comparison data
-            wp_send_json_success(array(
-                'overall_best' => $overall_best,
-                'ebay_best' => $ebay_best,
-                'amazon_best' => $amazon_best,
-                'total_results' => count($final_results),
-                'ebay_count' => count(array_filter($final_results, function($r) { return $r['source'] === 'ebay'; })),
-                'amazon_count' => count(array_filter($final_results, function($r) { return $r['source'] === 'amazon'; })),
-                'errors' => $errors,
-                'successful_apis' => $successful_apis,
-                'total_apis' => $api_attempts,
-                'filtering_stats' => $filtering_stats,
-                'wc_product_title' => $wc_product_title,
-                'cached' => false
-            ));
+            if ($result['success']) {
+                wp_send_json_success($result);
+            } else {
+                wp_send_json_error($result['error']);
+            }
             
         } catch (Exception $e) {
             error_log('Compare Pricing Exception: ' . $e->getMessage());
             wp_send_json_error('An error occurred: ' . $e->getMessage());
-        } catch (Error $e) {
-            error_log('Compare Pricing Fatal Error: ' . $e->getMessage());
-            wp_send_json_error('A fatal error occurred: ' . $e->getMessage());
         }
     }
     
@@ -565,5 +402,244 @@ class Compare_Pricing {
         }
         
         return $product->get_name();
+    }
+
+    /**
+     * Track daily statistics
+     */
+    private function track_daily_stats($type, $increment = 1) {
+        $today = date('Y-m-d');
+        $stats_key = 'compare_pricing_daily_stats_' . $today;
+        $stats = get_option($stats_key, array(
+            'cache_hits' => 0,
+            'api_calls' => 0,
+            'successful_lookups' => 0,
+            'failed_lookups' => 0
+        ));
+        
+        $stats[$type] += $increment;
+        update_option($stats_key, $stats);
+        
+        // Clean up old daily stats (keep last 30 days)
+        $this->cleanup_old_daily_stats();
+    }
+
+    /**
+     * Clean up old daily statistics
+     */
+    private function cleanup_old_daily_stats() {
+        global $wpdb;
+        
+        // Only run cleanup occasionally
+        if (rand(1, 100) > 5) { // 5% chance
+            return;
+        }
+        
+        $cutoff_date = date('Y-m-d', strtotime('-30 days'));
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE 'compare_pricing_daily_stats_%' AND option_name < %s",
+            'compare_pricing_daily_stats_' . $cutoff_date
+        ));
+    }
+
+    /**
+     * Record failed lookup for admin review
+     */
+    private function record_failed_lookup($gtin, $product_id, $errors) {
+        $failed_lookups = get_option('compare_pricing_failed_lookups', array());
+        
+        // Check if this GTIN already exists in recent failures
+        $existing_index = -1;
+        foreach ($failed_lookups as $index => $lookup) {
+            if ($lookup['gtin'] === $gtin && 
+                strtotime($lookup['timestamp']) > strtotime('-24 hours')) {
+                $existing_index = $index;
+                break;
+            }
+        }
+        
+        $lookup_data = array(
+            'gtin' => $gtin,
+            'product_id' => $product_id,
+            'timestamp' => current_time('mysql'),
+            'errors' => $errors
+        );
+        
+        if ($existing_index >= 0) {
+            // Update existing entry
+            $failed_lookups[$existing_index] = $lookup_data;
+        } else {
+            // Add new entry
+            array_unshift($failed_lookups, $lookup_data);
+        }
+        
+        // Keep only last 200 failed lookups
+        $failed_lookups = array_slice($failed_lookups, 0, 200);
+        
+        update_option('compare_pricing_failed_lookups', $failed_lookups);
+        
+        // Track in daily stats
+        $this->track_daily_stats('failed_lookups');
+    }
+
+    /**
+     * Check cache first, then make API calls
+     */
+    private function get_cached_or_fetch_results($gtin, $product_id) {
+        $cache_key = 'compare_pricing_' . md5($gtin);
+        $cached_result = get_transient($cache_key);
+        
+        if ($cached_result !== false) {
+            $this->track_daily_stats('cache_hits');
+            error_log('Compare Pricing: Using cached results for GTIN: ' . $gtin);
+            return $cached_result;
+        }
+        
+        // Track API call
+        $this->track_daily_stats('api_calls');
+        
+        // Fetch fresh results
+        $result = $this->fetch_fresh_results($gtin, $product_id);
+        
+        // Cache the results
+        $cache_duration = get_option('compare_pricing_cache_duration', 24) * HOUR_IN_SECONDS;
+        set_transient($cache_key, $result, $cache_duration);
+        
+        return $result;
+    }
+
+    /**
+     * Fetch fresh results from APIs
+     */
+    private function fetch_fresh_results($gtin, $product_id) {
+        // Get WooCommerce product title for matching
+        $wc_product_title = $this->get_wc_product_title($product_id);
+        
+        $all_results = array();
+        $filtered_results = array();
+        $errors = array();
+        $api_attempts = 0;
+        $successful_apis = 0;
+        $filtering_stats = array(
+            'total_found' => 0,
+            'relevant_found' => 0,
+            'ebay_total' => 0,
+            'ebay_relevant' => 0,
+            'amazon_total' => 0,
+            'amazon_relevant' => 0
+        );
+
+        // Try eBay API
+        if ($this->ebay_api) {
+            $api_attempts++;
+            $ebay_results = $this->ebay_api->search_products($gtin, 10);
+            
+            if (is_wp_error($ebay_results)) {
+                $errors['ebay'] = $ebay_results->get_error_message();
+            } elseif (!empty($ebay_results)) {
+                $all_results = array_merge($all_results, $ebay_results);
+                $successful_apis++;
+                $filtering_stats['ebay_total'] = count($ebay_results);
+                
+                // Filter eBay results for relevance
+                if (!empty($wc_product_title)) {
+                    foreach ($ebay_results as $result) {
+                        if ($this->is_relevant_product($result['title'], $wc_product_title)) {
+                            $filtered_results[] = $result;
+                            $filtering_stats['ebay_relevant']++;
+                        }
+                    }
+                } else {
+                    $filtered_results = array_merge($filtered_results, $ebay_results);
+                    $filtering_stats['ebay_relevant'] = count($ebay_results);
+                }
+            } else {
+                $errors['ebay'] = 'No results found on eBay';
+            }
+        } else {
+            $errors['ebay'] = 'eBay API not configured';
+        }
+
+        // Try Amazon API
+        if ($this->amazon_api) {
+            $api_attempts++;
+            $amazon_result = $this->amazon_api->search_products($gtin, 10);
+
+            if ($amazon_result['success'] && !empty($amazon_result['products'])) {
+                $all_results = array_merge($all_results, $amazon_result['products']);
+                $successful_apis++;
+                $filtering_stats['amazon_total'] = count($amazon_result['products']);
+                
+                // Filter Amazon results for relevance
+                if (!empty($wc_product_title)) {
+                    foreach ($amazon_result['products'] as $result) {
+                        if ($this->is_relevant_product($result['title'], $wc_product_title)) {
+                            $filtered_results[] = $result;
+                            $filtering_stats['amazon_relevant']++;
+                        }
+                    }
+                } else {
+                    $filtered_results = array_merge($filtered_results, $amazon_result['products']);
+                    $filtering_stats['amazon_relevant'] = count($amazon_result['products']);
+                }
+            } elseif (!$amazon_result['success']) {
+                $errors['amazon'] = $amazon_result['error'];
+            } else {
+                $errors['amazon'] = 'No results found on Amazon';
+            }
+        } else {
+            $errors['amazon'] = 'Amazon API not configured';
+        }
+
+        // Update total stats
+        $filtering_stats['total_found'] = count($all_results);
+        $filtering_stats['relevant_found'] = count($filtered_results);
+
+        // Record failed lookup if no results
+        if (empty($filtered_results)) {
+            $this->record_failed_lookup($gtin, $product_id, $errors);
+            return array(
+                'success' => false,
+                'error' => 'No relevant results found',
+                'filtering_stats' => $filtering_stats,
+                'errors' => $errors
+            );
+        }
+
+        // Track successful lookup
+        $this->track_daily_stats('successful_lookups');
+
+        // Sort results by price
+        usort($filtered_results, function($a, $b) {
+            return $a['price'] <=> $b['price'];
+        });
+
+        // Get best deals
+        $ebay_best = null;
+        $amazon_best = null;
+        $overall_best = $filtered_results[0];
+
+        foreach ($filtered_results as $result) {
+            if ($result['source'] === 'ebay' && !$ebay_best) {
+                $ebay_best = $result;
+            }
+            if ($result['source'] === 'amazon' && !$amazon_best) {
+                $amazon_best = $result;
+            }
+            if ($ebay_best && $amazon_best) break;
+        }
+
+        return array(
+            'success' => true,
+            'overall_best' => $overall_best,
+            'ebay_best' => $ebay_best,
+            'amazon_best' => $amazon_best,
+            'total_results' => count($filtered_results),
+            'ebay_count' => count(array_filter($filtered_results, function($r) { return $r['source'] === 'ebay'; })),
+            'amazon_count' => count(array_filter($filtered_results, function($r) { return $r['source'] === 'amazon'; })),
+            'filtering_stats' => $filtering_stats,
+            'wc_product_title' => $wc_product_title,
+            'errors' => $errors
+        );
     }
 } 

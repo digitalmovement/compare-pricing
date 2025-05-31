@@ -222,7 +222,80 @@ jQuery(document).ready(function($) {
             case 'error': return '❌';
             case 'warning': return '⚠️';
             case 'checking': return '🔄';
-            default: return '📋';
+            default: return '��';
         }
+    }
+    
+    // Clear cache
+    $('#clear-cache').on('click', function(e) {
+        e.preventDefault();
+        
+        var $button = $(this);
+        var originalText = $button.text();
+        
+        $button.prop('disabled', true).text('Clearing...');
+        
+        $.post(comparePricingAdmin.ajax_url, {
+            action: 'compare_pricing_clear_cache',
+            nonce: comparePricingAdmin.nonce
+        }, function(response) {
+            if (response.success) {
+                alert('Cache cleared successfully! Deleted ' + response.data.deleted_entries + ' cached entries.');
+                location.reload(); // Refresh to update stats
+            } else {
+                alert('Error clearing cache: ' + response.data);
+            }
+        }).always(function() {
+            $button.prop('disabled', false).text(originalText);
+        });
+    });
+    
+    // Clear failed lookups
+    $('#clear-failed-lookups').on('click', function(e) {
+        e.preventDefault();
+        
+        if (!confirm('Are you sure you want to clear all failed lookup records?')) {
+            return;
+        }
+        
+        var $button = $(this);
+        var originalText = $button.text();
+        
+        $button.prop('disabled', true).text('Clearing...');
+        
+        $.post(comparePricingAdmin.ajax_url, {
+            action: 'compare_pricing_clear_failed_lookups',
+            nonce: comparePricingAdmin.nonce
+        }, function(response) {
+            if (response.success) {
+                alert('Failed lookups cleared successfully!');
+                location.reload(); // Refresh to update display
+            } else {
+                alert('Error clearing failed lookups: ' + response.data);
+            }
+        }).always(function() {
+            $button.prop('disabled', false).text(originalText);
+        });
+    });
+    
+    // Retry lookup function (called from inline onclick)
+    function retryLookup(gtin, index) {
+        if (!confirm('Retry lookup for GTIN: ' + gtin + '?')) {
+            return;
+        }
+        
+        $.post(comparePricingAdmin.ajax_url, {
+            action: 'compare_pricing_retry_lookup',
+            nonce: comparePricingAdmin.nonce,
+            gtin: gtin,
+            index: index
+        }, function(response) {
+            if (response.success) {
+                alert('Lookup retry successful! Found results.');
+                location.reload(); // Refresh to update display
+            } else {
+                alert('Lookup still failed: ' + response.data);
+            }
+        });
     }
 }); 

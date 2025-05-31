@@ -7,6 +7,8 @@ class Compare_Pricing_Admin {
         add_action('admin_init', array($this, 'init_settings'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
         add_action('wp_ajax_compare_pricing_clear_cache', array($this, 'ajax_clear_cache'));
+        add_action('wp_ajax_compare_pricing_clear_failed_lookups', array($this, 'ajax_clear_failed_lookups'));
+        add_action('wp_ajax_compare_pricing_retry_lookup', array($this, 'ajax_retry_lookup'));
         add_action('wp_ajax_compare_pricing_test_api', array($this, 'ajax_test_api'));
         add_action('wp_ajax_compare_pricing_test_amazon_api', array($this, 'ajax_test_amazon_api'));
         add_action('wp_ajax_test_ebay_api', array($this, 'ajax_test_ebay_api'));
@@ -128,6 +130,18 @@ class Compare_Pricing_Admin {
                 </ul>
             </div>
             
+            <!-- Cache and Performance Stats -->
+            <div class="diagnostic-section">
+                <h2>📊 Performance Statistics</h2>
+                <?php $this->display_cache_stats(); ?>
+            </div>
+            
+            <!-- Failed Lookups -->
+            <div class="diagnostic-section">
+                <h2>⚠️ Failed Product Lookups</h2>
+                <?php $this->display_failed_lookups(); ?>
+            </div>
+            
             <form method="post" action="options.php">
                 <?php
                 settings_fields('compare_pricing_settings');
@@ -157,44 +171,19 @@ class Compare_Pricing_Admin {
                 
                 <div class="api-test-section">
                     <h3>GTIN Lookup Test</h3>
-                    <p>Test price comparison for a specific GTIN/UPC/EAN code.</p>
                     <div class="gtin-test-controls">
-                        <input type="text" id="test-gtin" placeholder="Enter GTIN/UPC/EAN" class="regular-text" />
+                        <input type="text" id="test-gtin" placeholder="Enter GTIN/UPC/EAN" />
                         <button type="button" id="test-gtin-lookup" class="test-button">Test GTIN Lookup</button>
+                        <button type="button" id="clear-cache" class="test-button" style="background: #dc3545;">Clear All Cache</button>
+                        <button type="button" id="clear-failed-lookups" class="test-button" style="background: #ffc107; color: #000;">Clear Failed Lookups</button>
                     </div>
                     <div class="gtin-examples">
-                        <p><strong>Example GTINs to test:</strong></p>
-                        <ul>
-                            <li><code>3386460065947</code> - Perfume/Fragrance product</li>
-                            <li><code>0885909950805</code> - Electronics product</li>
-                            <li><code>0194252014233</code> - Beauty product</li>
-                            <li><code>0123456789012</code> - Generic test GTIN</li>
-                        </ul>
-                        <p><em>Note: Results depend on product availability on eBay and Amazon.</em></p>
+                        <strong>Example GTINs to test:</strong><br>
+                        • 3386460065947 (Perfume)<br>
+                        • 0885909950805 (Electronics)<br>
+                        • 0123456789012 (Generic)
                     </div>
                     <div id="gtin-test-results" class="test-results"></div>
-                </div>
-                
-                <div class="api-info-section">
-                    <h3>📋 API Information</h3>
-                    <div class="api-info-grid">
-                        <div class="api-info-card">
-                            <h4>eBay Developer API</h4>
-                            <p><strong>Purpose:</strong> Search eBay marketplace for products</p>
-                            <p><strong>Required:</strong> App ID, Dev ID, Cert ID</p>
-                            <p><strong>Get credentials:</strong> <a href="https://developer.ebay.com/" target="_blank">eBay Developer Program</a></p>
-                            <p><strong>Documentation:</strong> <a href="https://developer.ebay.com/api-docs/buy/browse/overview.html" target="_blank">Browse API Docs</a></p>
-                        </div>
-                        
-                        <div class="api-info-card">
-                            <h4>ASIN Data API (Traject Data)</h4>
-                            <p><strong>Purpose:</strong> Search Amazon marketplace for products</p>
-                            <p><strong>Required:</strong> API Key only</p>
-                            <p><strong>Get API key:</strong> <a href="https://app.asindataapi.com/signup" target="_blank">Sign up at asindataapi.com</a></p>
-                            <p><strong>Documentation:</strong> <a href="https://docs.trajectdata.com/asindataapi/product-data-api/overview" target="_blank">API Documentation</a></p>
-                            <p><strong>Pricing:</strong> Pay-per-request model with free tier available</p>
-                        </div>
-                    </div>
                 </div>
             </div>
             
@@ -285,6 +274,83 @@ if (function_exists('compare_pricing_display')) {
             padding: 2px 4px;
             border-radius: 3px;
             font-family: monospace;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #0073aa;
+            display: block;
+        }
+        
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .failed-lookups-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        .failed-lookups-table th,
+        .failed-lookups-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .failed-lookups-table th {
+            background: #f5f5f5;
+            font-weight: bold;
+        }
+        
+        .failed-lookups-table tr:hover {
+            background: #f9f9f9;
+        }
+        
+        .error-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .product-link {
+            color: #0073aa;
+            text-decoration: none;
+        }
+        
+        .product-link:hover {
+            text-decoration: underline;
+        }
+        
+        .retry-button {
+            background: #0073aa;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        
+        .retry-button:hover {
+            background: #005a87;
         }
         </style>
         <?php
@@ -535,5 +601,239 @@ if (function_exists('compare_pricing_display')) {
                 'warning' => 'Warning!'
             )
         ));
+    }
+    
+    private function display_cache_stats() {
+        global $wpdb;
+        
+        // Get cache statistics
+        $cache_stats = array(
+            'total_cached' => 0,
+            'successful_cached' => 0,
+            'failed_cached' => 0,
+            'cache_hits_today' => 0,
+            'api_calls_today' => 0,
+            'cache_size_mb' => 0
+        );
+        
+        // Count cached entries
+        $cache_count = wp_cache_get('compare_pricing_cache_count');
+        if ($cache_count === false) {
+            // Count transients with our prefix
+            $transient_count = $wpdb->get_var(
+                "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '_transient_compare_pricing_%'"
+            );
+            $cache_stats['total_cached'] = intval($transient_count);
+            wp_cache_set('compare_pricing_cache_count', $cache_stats['total_cached'], '', 300); // Cache for 5 minutes
+        } else {
+            $cache_stats['total_cached'] = $cache_count;
+        }
+        
+        // Get today's stats
+        $today_stats = get_option('compare_pricing_daily_stats_' . date('Y-m-d'), array(
+            'cache_hits' => 0,
+            'api_calls' => 0,
+            'successful_lookups' => 0,
+            'failed_lookups' => 0
+        ));
+        
+        $cache_stats['cache_hits_today'] = $today_stats['cache_hits'];
+        $cache_stats['api_calls_today'] = $today_stats['api_calls'];
+        
+        // Calculate cache size (approximate)
+        $cache_size_bytes = $wpdb->get_var(
+            "SELECT SUM(LENGTH(option_value)) FROM {$wpdb->options} WHERE option_name LIKE '_transient_compare_pricing_%'"
+        );
+        $cache_stats['cache_size_mb'] = round($cache_size_bytes / 1024 / 1024, 2);
+        
+        ?>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-number"><?php echo number_format($cache_stats['total_cached']); ?></span>
+                <div class="stat-label">Cached Results</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number"><?php echo number_format($cache_stats['cache_hits_today']); ?></span>
+                <div class="stat-label">Cache Hits Today</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number"><?php echo number_format($cache_stats['api_calls_today']); ?></span>
+                <div class="stat-label">API Calls Today</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number"><?php echo $cache_stats['cache_size_mb']; ?> MB</span>
+                <div class="stat-label">Cache Size</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number"><?php echo number_format($today_stats['successful_lookups']); ?></span>
+                <div class="stat-label">Successful Lookups Today</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number"><?php echo number_format($today_stats['failed_lookups']); ?></span>
+                <div class="stat-label">Failed Lookups Today</div>
+            </div>
+        </div>
+        
+        <p><strong>Cache Efficiency:</strong> 
+        <?php 
+        $total_requests = $cache_stats['cache_hits_today'] + $cache_stats['api_calls_today'];
+        if ($total_requests > 0) {
+            $efficiency = round(($cache_stats['cache_hits_today'] / $total_requests) * 100, 1);
+            echo $efficiency . '% of requests served from cache today';
+        } else {
+            echo 'No requests today';
+        }
+        ?>
+        </p>
+        <?php
+    }
+    
+    private function display_failed_lookups() {
+        $failed_lookups = get_option('compare_pricing_failed_lookups', array());
+        
+        if (empty($failed_lookups)) {
+            echo '<p>✅ No failed lookups recorded. All products are finding competitive pricing data!</p>';
+            return;
+        }
+        
+        // Sort by most recent first
+        usort($failed_lookups, function($a, $b) {
+            return strtotime($b['timestamp']) - strtotime($a['timestamp']);
+        });
+        
+        echo '<p>The following products failed to return results from both eBay and Amazon. Review their GTINs and product information:</p>';
+        
+        echo '<table class="failed-lookups-table">';
+        echo '<thead>';
+        echo '<tr>';
+        echo '<th>Product</th>';
+        echo '<th>GTIN</th>';
+        echo '<th>Last Attempt</th>';
+        echo '<th>Error Details</th>';
+        echo '<th>Actions</th>';
+        echo '</tr>';
+        echo '</thead>';
+        echo '<tbody>';
+        
+        foreach (array_slice($failed_lookups, 0, 50) as $index => $lookup) { // Show last 50
+            $product_id = $lookup['product_id'];
+            $product_title = 'Unknown Product';
+            $edit_link = '#';
+            
+            if ($product_id && $product_id !== 'custom') {
+                $product = wc_get_product($product_id);
+                if ($product) {
+                    $product_title = $product->get_name();
+                    $edit_link = admin_url('post.php?post=' . $product_id . '&action=edit');
+                }
+            }
+            
+            echo '<tr>';
+            echo '<td>';
+            if ($edit_link !== '#') {
+                echo '<a href="' . esc_url($edit_link) . '" class="product-link" target="_blank">' . esc_html($product_title) . '</a>';
+            } else {
+                echo esc_html($product_title);
+            }
+            echo '</td>';
+            echo '<td><code>' . esc_html($lookup['gtin']) . '</code></td>';
+            echo '<td>' . esc_html(date('M j, Y g:i A', strtotime($lookup['timestamp']))) . '</td>';
+            echo '<td class="error-details">';
+            if (!empty($lookup['errors'])) {
+                foreach ($lookup['errors'] as $platform => $error) {
+                    echo '<strong>' . ucfirst($platform) . ':</strong> ' . esc_html($error) . '<br>';
+                }
+            } else {
+                echo 'No specific errors recorded';
+            }
+            echo '</td>';
+            echo '<td>';
+            echo '<button class="retry-button" onclick="retryLookup(\'' . esc_js($lookup['gtin']) . '\', ' . $index . ')">Retry</button>';
+            echo '</td>';
+            echo '</tr>';
+        }
+        
+        echo '</tbody>';
+        echo '</table>';
+        
+        if (count($failed_lookups) > 50) {
+            echo '<p><em>Showing 50 most recent failed lookups. Total: ' . count($failed_lookups) . '</em></p>';
+        }
+    }
+
+    public function ajax_clear_cache() {
+        check_ajax_referer('test_api_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        global $wpdb;
+        
+        // Delete all compare pricing transients
+        $deleted = $wpdb->query(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_compare_pricing_%' OR option_name LIKE '_transient_timeout_compare_pricing_%'"
+        );
+        
+        // Clear cache count
+        wp_cache_delete('compare_pricing_cache_count');
+        
+        wp_send_json_success(array(
+            'message' => 'Cache cleared successfully',
+            'deleted_entries' => $deleted / 2 // Divide by 2 because each transient has a timeout entry
+        ));
+    }
+
+    public function ajax_clear_failed_lookups() {
+        check_ajax_referer('test_api_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        delete_option('compare_pricing_failed_lookups');
+        
+        wp_send_json_success(array(
+            'message' => 'Failed lookups cleared successfully'
+        ));
+    }
+
+    public function ajax_retry_lookup() {
+        check_ajax_referer('test_api_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        $gtin = sanitize_text_field($_POST['gtin']);
+        $index = intval($_POST['index']);
+        
+        if (empty($gtin)) {
+            wp_send_json_error('GTIN is required');
+            return;
+        }
+        
+        // Clear cache for this GTIN
+        $cache_key = 'compare_pricing_' . md5($gtin);
+        delete_transient($cache_key);
+        
+        // Remove from failed lookups
+        $failed_lookups = get_option('compare_pricing_failed_lookups', array());
+        if (isset($failed_lookups[$index])) {
+            unset($failed_lookups[$index]);
+            $failed_lookups = array_values($failed_lookups); // Re-index array
+            update_option('compare_pricing_failed_lookups', $failed_lookups);
+        }
+        
+        // Try the lookup again
+        require_once COMPARE_PRICING_PATH . 'includes/class-compare-pricing.php';
+        $compare_pricing = new Compare_Pricing();
+        
+        // This will be handled by the existing test_gtin_lookup method
+        $_POST['gtin'] = $gtin;
+        $this->ajax_test_gtin_lookup();
     }
 } 
