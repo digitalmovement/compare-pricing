@@ -70,4 +70,15 @@ register_deactivation_hook(__FILE__, function() {
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_amazon_%' OR option_name LIKE '_transient_timeout_amazon_%'");
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ebay_%' OR option_name LIKE '_transient_timeout_ebay_%'");
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_compare_pricing_%' OR option_name LIKE '_transient_timeout_compare_pricing_%'");
-}); 
+});
+
+public function enqueue_scripts() {
+    // existing code...
+    wp_enqueue_script('compare-pricing-js', plugin_dir_url(__FILE__) . 'assets/js/compare-pricing.js', array('jquery'), '1.0.0', true);
+    
+    // Add nonce to localized script
+    wp_localize_script('compare-pricing-js', 'compare_pricing_ajax', array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('compare_pricing_nonce')
+    ));
+} 

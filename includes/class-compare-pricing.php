@@ -12,8 +12,8 @@ class Compare_Pricing {
         add_action('init', array($this, 'init'));
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
         add_shortcode('compare_pricing', array($this, 'shortcode_handler'));
-        add_action('wp_ajax_get_price_comparison', array($this, 'ajax_get_price_comparison'));
-        add_action('wp_ajax_nopriv_get_price_comparison', array($this, 'ajax_get_price_comparison'));
+        add_action('wp_ajax_compare_pricing', array($this, 'handle_ajax_compare'));
+        add_action('wp_ajax_nopriv_compare_pricing', array($this, 'handle_ajax_compare'));
     }
     
     public function init() {
@@ -139,21 +139,30 @@ class Compare_Pricing {
         return '';
     }
     
-    public function ajax_get_price_comparison() {
-        check_ajax_referer('compare_pricing_nonce', 'nonce');
-        
-        $search_term = sanitize_text_field($_POST['search_term']);
-        $limit = intval($_POST['limit']);
-        
-        if (empty($search_term)) {
-            wp_die('Invalid search term');
+    public function handle_ajax_compare() {
+        try {
+            // Verify nonce
+            if (!wp_verify_nonce($_POST['nonce'], 'compare_pricing_nonce')) {
+                wp_send_json_error('Security check failed');
+                return;
+            }
+
+            // Validate required data
+            if (empty($_POST['product_name'])) {
+                wp_send_json_error('Product name is required');
+                return;
+            }
+
+            $product_name = sanitize_text_field($_POST['product_name']);
+            
+            // existing code for API calls...
+            
+            // Send success response
+            wp_send_json_success($comparison_data);
+            
+        } catch (Exception $e) {
+            wp_send_json_error('An error occurred: ' . $e->getMessage());
         }
-        
-        ob_start();
-        $this->display_price_comparison($search_term, $limit);
-        $html = ob_get_clean();
-        
-        wp_send_json_success($html);
     }
     
     private function display_price_comparison($search_term, $limit = 5) {

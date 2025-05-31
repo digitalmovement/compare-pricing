@@ -20,13 +20,14 @@ jQuery(document).ready(function($) {
         
         // Make AJAX request to get eBay price
         $.ajax({
-            url: comparePricing.ajax_url,
+            url: compare_pricing_ajax.ajax_url,
             type: 'POST',
             data: {
-                action: 'get_ebay_price',
+                action: 'compare_pricing',
+                nonce: compare_pricing_ajax.nonce,
                 gtin: gtin,
                 product_id: productId,
-                nonce: comparePricing.nonce
+                product_name: productName
             },
             success: function(response) {
                 if (response.success) {
@@ -47,7 +48,8 @@ jQuery(document).ready(function($) {
                     );
                 }
             },
-            error: function() {
+            error: function(xhr, status, error) {
+                console.log('AJAX Error:', xhr.responseText);
                 $content.html(
                     '<div class="compare-pricing-error">' +
                     '<p>Error loading price comparison</p>' +
