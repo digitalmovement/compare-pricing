@@ -163,39 +163,82 @@ class Compare_Pricing {
                 return;
             }
 
-            // Check if eBay API class exists
-            if (!$this->ebay_api) {
-                error_log('Compare Pricing: eBay API not initialized');
-                wp_send_json_error('eBay API not available');
+            // Check if API classes exist
+            if (!$this->ebay_api || !$this->amazon_api) {
+                error_log('Compare Pricing: API classes not initialized');
+                wp_send_json_error('API services not available');
                 return;
             }
+
+            $all_results = array();
+            $errors = array();
 
             // Get eBay results using GTIN
             error_log('Compare Pricing: Calling eBay API with GTIN: ' . $gtin);
-            $ebay_results = $this->ebay_api->search_products($gtin, 1);
+            $ebay_results = $this->ebay_api->search_products($gtin, 5);
             
             if (is_wp_error($ebay_results)) {
                 error_log('Compare Pricing: eBay API Error - ' . $ebay_results->get_error_message());
-                wp_send_json_error('eBay API Error: ' . $ebay_results->get_error_message());
+                $errors['ebay'] = $ebay_results->get_error_message();
+            } elseif (!empty($ebay_results)) {
+                $all_results = array_merge($all_results, $ebay_results);
+                error_log('Compare Pricing: Found ' . count($ebay_results) . ' eBay results');
+            }
+
+            // Get Amazon results using GTIN
+            error_log('Compare Pricing: Calling Amazon API with GTIN: ' . $gtin);
+            $amazon_results = $this->amazon_api->search_products($gtin, 5);
+            
+            if (is_wp_error($amazon_results)) {
+                error_log('Compare Pricing: Amazon API Error - ' . $amazon_results->get_error_message());
+                $errors['amazon'] = $amazon_results->get_error_message();
+            } elseif (!empty($amazon_results)) {
+                $all_results = array_merge($all_results, $amazon_results);
+                error_log('Compare Pricing: Found ' . count($amazon_results) . ' Amazon results');
+            }
+
+            // If no results from either platform
+            if (empty($all_results)) {
+                $error_message = 'No results found';
+                if (!empty($errors)) {
+                    $error_message .= '. Errors: ' . implode(', ', $errors);
+                }
+                error_log('Compare Pricing: ' . $error_message);
+                wp_send_json_error($error_message);
                 return;
             }
 
-            if (empty($ebay_results)) {
-                error_log('Compare Pricing: No eBay results found');
-                wp_send_json_error('No results found');
-                return;
+            // Sort all results by price (lowest first)
+            usort($all_results, function($a, $b) {
+                return $a['price'] <=> $b['price'];
+            });
+
+            // Get the best deals from each platform
+            $ebay_best = null;
+            $amazon_best = null;
+            $overall_best = $all_results[0];
+
+            foreach ($all_results as $result) {
+                if ($result['source'] === 'ebay' && !$ebay_best) {
+                    $ebay_best = $result;
+                }
+                if ($result['source'] === 'amazon' && !$amazon_best) {
+                    $amazon_best = $result;
+                }
+                if ($ebay_best && $amazon_best) break;
             }
 
-            // Get the first (best) result
-            $best_result = $ebay_results[0];
+            error_log('Compare Pricing: Success - Best price: $' . $overall_best['price'] . ' from ' . $overall_best['source']);
             
-            error_log('Compare Pricing: Success - Price: ' . $best_result['price']);
-            
-            // Send success response
+            // Send success response with comparison data
             wp_send_json_success(array(
-                'price' => $best_result['price'],
-                'url' => $best_result['url'],
-                'title' => $best_result['title'],
+                'overall_best' => $overall_best,
+                'ebay_best' => $ebay_best,
+                'amazon_best' => $amazon_best,
+                'total_results' => count($all_results),
+                'ebay_count' => count(array_filter($all_results, function($r) { return $r['source'] === 'ebay'; })),
+                'amazon_count' => count(array_filter($all_results, function($r) { return $r['source'] === 'amazon'; })),
+                'errors' => $errors,
                 'cached' => false
             ));
             
