@@ -701,14 +701,36 @@ if (function_exists('compare_pricing_display')) {
             return strtotime($b['timestamp']) - strtotime($a['timestamp']);
         });
         
-        echo '<p>The following products failed to return results from both eBay and Amazon. Review their GTINs and product information:</p>';
+        // Group by failure type for summary
+        $failure_types = array();
+        foreach ($failed_lookups as $lookup) {
+            $type = isset($lookup['failure_type']) ? $lookup['failure_type'] : 'unknown';
+            if (!isset($failure_types[$type])) {
+                $failure_types[$type] = 0;
+            }
+            $failure_types[$type]++;
+        }
+        
+        echo '<div class="failure-summary">';
+        echo '<h4>Failure Summary:</h4>';
+        echo '<ul>';
+        foreach ($failure_types as $type => $count) {
+            $type_label = $this->get_failure_type_label($type);
+            echo '<li><strong>' . $type_label . ':</strong> ' . $count . ' products</li>';
+        }
+        echo '</ul>';
+        echo '</div>';
+        
+        echo '<p>The following products failed to return relevant results. Review their GTINs and product information:</p>';
         
         echo '<table class="failed-lookups-table">';
         echo '<thead>';
         echo '<tr>';
         echo '<th>Product</th>';
         echo '<th>GTIN</th>';
+        echo '<th>Failure Type</th>';
         echo '<th>Last Attempt</th>';
+        echo '<th>Attempts</th>';
         echo '<th>Error Details</th>';
         echo '<th>Actions</th>';
         echo '</tr>';
@@ -728,7 +750,11 @@ if (function_exists('compare_pricing_display')) {
                 }
             }
             
-            echo '<tr>';
+            $failure_type = isset($lookup['failure_type']) ? $lookup['failure_type'] : 'unknown';
+            $failure_reason = isset($lookup['failure_reason']) ? $lookup['failure_reason'] : 'Unknown failure';
+            $attempt_count = isset($lookup['attempt_count']) ? $lookup['attempt_count'] : 1;
+            
+            echo '<tr class="failure-type-' . esc_attr($failure_type) . '">';
             echo '<td>';
             if ($edit_link !== '#') {
                 echo '<a href="' . esc_url($edit_link) . '" class="product-link" target="_blank">' . esc_html($product_title) . '</a>';
@@ -737,7 +763,14 @@ if (function_exists('compare_pricing_display')) {
             }
             echo '</td>';
             echo '<td><code>' . esc_html($lookup['gtin']) . '</code></td>';
+            echo '<td>';
+            echo '<span class="failure-badge failure-' . esc_attr($failure_type) . '">';
+            echo esc_html($this->get_failure_type_label($failure_type));
+            echo '</span>';
+            echo '<br><small>' . esc_html($failure_reason) . '</small>';
+            echo '</td>';
             echo '<td>' . esc_html(date('M j, Y g:i A', strtotime($lookup['timestamp']))) . '</td>';
+            echo '<td>' . $attempt_count . '</td>';
             echo '<td class="error-details">';
             if (!empty($lookup['errors'])) {
                 foreach ($lookup['errors'] as $platform => $error) {
@@ -749,6 +782,9 @@ if (function_exists('compare_pricing_display')) {
             echo '</td>';
             echo '<td>';
             echo '<button class="retry-button" onclick="retryLookup(\'' . esc_js($lookup['gtin']) . '\', ' . $index . ')">Retry</button>';
+            if ($edit_link !== '#') {
+                echo '<br><a href="' . esc_url($edit_link) . '" class="edit-product-link" target="_blank">Edit Product</a>';
+            }
             echo '</td>';
             echo '</tr>';
         }
@@ -758,6 +794,21 @@ if (function_exists('compare_pricing_display')) {
         
         if (count($failed_lookups) > 50) {
             echo '<p><em>Showing 50 most recent failed lookups. Total: ' . count($failed_lookups) . '</em></p>';
+        }
+    }
+
+    private function get_failure_type_label($type) {
+        switch ($type) {
+            case 'keyword_mismatch':
+                return 'Keyword Mismatch';
+            case 'no_apis':
+                return 'No APIs Configured';
+            case 'api_failure':
+                return 'API Failure';
+            case 'no_results':
+                return 'No Results Found';
+            default:
+                return 'Unknown';
         }
     }
 

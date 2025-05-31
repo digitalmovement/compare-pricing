@@ -445,7 +445,7 @@ class Compare_Pricing {
     /**
      * Record failed lookup for admin review
      */
-    private function record_failed_lookup($gtin, $product_id, $errors) {
+    private function record_failed_lookup($gtin, $product_id, $errors, $failure_reason = 'Unknown failure') {
         $failed_lookups = get_option('compare_pricing_failed_lookups', array());
         
         // Check if this GTIN already exists in recent failures
@@ -458,15 +458,31 @@ class Compare_Pricing {
             }
         }
         
+        // Determine failure type for better categorization
+        $failure_type = 'unknown';
+        if (strpos($failure_reason, 'keyword matching') !== false || strpos($failure_reason, 'none matched') !== false) {
+            $failure_type = 'keyword_mismatch';
+        } elseif (strpos($failure_reason, 'No APIs configured') !== false) {
+            $failure_type = 'no_apis';
+        } elseif (strpos($failure_reason, 'All APIs failed') !== false) {
+            $failure_type = 'api_failure';
+        } elseif (strpos($failure_reason, 'No results found') !== false) {
+            $failure_type = 'no_results';
+        }
+        
         $lookup_data = array(
             'gtin' => $gtin,
             'product_id' => $product_id,
             'timestamp' => current_time('mysql'),
-            'errors' => $errors
+            'errors' => $errors,
+            'failure_reason' => $failure_reason,
+            'failure_type' => $failure_type,
+            'attempt_count' => 1
         );
         
         if ($existing_index >= 0) {
-            // Update existing entry
+            // Update existing entry and increment attempt count
+            $lookup_data['attempt_count'] = $failed_lookups[$existing_index]['attempt_count'] + 1;
             $failed_lookups[$existing_index] = $lookup_data;
         } else {
             // Add new entry
@@ -549,6 +565,11 @@ class Compare_Pricing {
                             $filtering_stats['ebay_relevant']++;
                         }
                     }
+                    
+                    // If we got results but none were relevant, record this as an error
+                    if (count($ebay_results) > 0 && $filtering_stats['ebay_relevant'] === 0) {
+                        $errors['ebay'] = 'Found ' . count($ebay_results) . ' products but none matched your product keywords';
+                    }
                 } else {
                     $filtered_results = array_merge($filtered_results, $ebay_results);
                     $filtering_stats['ebay_relevant'] = count($ebay_results);
@@ -578,6 +599,11 @@ class Compare_Pricing {
                             $filtering_stats['amazon_relevant']++;
                         }
                     }
+                    
+                    // If we got results but none were relevant, record this as an error
+                    if (count($amazon_result['products']) > 0 && $filtering_stats['amazon_relevant'] === 0) {
+                        $errors['amazon'] = 'Found ' . count($amazon_result['products']) . ' products but none matched your product keywords';
+                    }
                 } else {
                     $filtered_results = array_merge($filtered_results, $amazon_result['products']);
                     $filtering_stats['amazon_relevant'] = count($amazon_result['products']);
@@ -595,12 +621,31 @@ class Compare_Pricing {
         $filtering_stats['total_found'] = count($all_results);
         $filtering_stats['relevant_found'] = count($filtered_results);
 
-        // Record failed lookup if no results
+        // Record failed lookup if no relevant results (even if APIs returned data)
         if (empty($filtered_results)) {
-            $this->record_failed_lookup($gtin, $product_id, $errors);
+            // Determine the failure reason
+            $failure_reason = 'No relevant results found';
+            
+            if ($api_attempts === 0) {
+                $failure_reason = 'No APIs configured';
+            } elseif ($successful_apis === 0) {
+                $failure_reason = 'All APIs failed to return data';
+            } elseif ($filtering_stats['total_found'] > 0) {
+                $failure_reason = 'Keyword matching failed - found ' . $filtering_stats['total_found'] . ' products but none matched your product';
+                
+                // Add specific keyword matching details to errors
+                if (!empty($wc_product_title)) {
+                    $min_matches = get_option('compare_pricing_min_keyword_matches', 2);
+                    $errors['keyword_matching'] = "Product title: '{$wc_product_title}' - Required {$min_matches} keyword matches but none found";
+                } else {
+                    $errors['keyword_matching'] = 'No WooCommerce product title available for keyword matching';
+                }
+            }
+            
+            $this->record_failed_lookup($gtin, $product_id, $errors, $failure_reason);
             return array(
                 'success' => false,
-                'error' => 'No relevant results found',
+                'error' => $failure_reason,
                 'filtering_stats' => $filtering_stats,
                 'errors' => $errors
             );

@@ -169,4 +169,64 @@
 
 .gtin-examples strong {
     color: #333;
+}
+
+.failure-summary {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    margin: 15px 0;
+}
+
+.failure-badge {
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.failure-keyword_mismatch {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.failure-no_apis {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.failure-api_failure {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.failure-no_results {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.failure-unknown {
+    background: #e2e3e5;
+    color: #383d41;
+    border: 1px solid #d6d8db;
+}
+
+.failed-lookups-table tr.failure-type-keyword_mismatch {
+    background-color: #fffbf0;
+}
+
+.edit-product-link {
+    font-size: 11px;
+    text-decoration: none;
+    color: #0073aa;
+}
+
+.edit-product-link:hover {
+    text-decoration: underline;
 } 
