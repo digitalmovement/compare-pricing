@@ -1,0 +1,172 @@
+.diagnostic-section {
+    margin-bottom: 30px;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background: #f9f9f9;
+}
+
+.diagnostic-section h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+.test-button {
+    background: #0073aa;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+.test-button:hover {
+    background: #005a87;
+}
+
+.test-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.test-results {
+    margin-top: 15px;
+    padding: 15px;
+    border-radius: 5px;
+    border-left: 4px solid;
+}
+
+.test-results.success {
+    background: #f0f8f0;
+    border-left-color: #46b450;
+}
+
+.test-results.error {
+    background: #fef7f7;
+    border-left-color: #dc3232;
+}
+
+.test-step {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 3px;
+}
+
+.test-step.success {
+    background: rgba(70, 180, 80, 0.1);
+}
+
+.test-step.error {
+    background: rgba(220, 50, 50, 0.1);
+}
+
+.test-step.warning {
+    background: rgba(255, 193, 7, 0.1);
+}
+
+.test-step h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+}
+
+.test-step ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.warnings, .help, .note {
+    margin-top: 10px;
+    padding: 8px;
+    border-radius: 3px;
+}
+
+.warnings {
+    background: rgba(255, 193, 7, 0.1);
+    border-left: 3px solid #ffc107;
+}
+
+.help {
+    background: rgba(0, 123, 255, 0.1);
+    border-left: 3px solid #007bff;
+}
+
+.note {
+    background: rgba(108, 117, 125, 0.1);
+    border-left: 3px solid #6c757d;
+}
+
+.testing {
+    padding: 10px;
+    background: #e7f3ff;
+    border-left: 4px solid #0073aa;
+    margin: 10px 0;
+}
+
+.gtin-results {
+    margin-top: 15px;
+}
+
+.best-deal {
+    background: #f0f8f0;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 10px 0;
+    border-left: 4px solid #46b450;
+}
+
+.platform-breakdown {
+    margin: 15px 0;
+}
+
+.platform-result {
+    padding: 8px;
+    margin: 5px 0;
+    border-radius: 3px;
+}
+
+.platform-result.ebay {
+    background: #fef9e7;
+    border-left: 3px solid #e53238;
+}
+
+.platform-result.amazon {
+    background: #f0f8ff;
+    border-left: 3px solid #ff9900;
+}
+
+.platform-result.no-results {
+    opacity: 0.6;
+    font-style: italic;
+}
+
+.summary {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 3px;
+    margin-top: 15px;
+}
+
+.errors {
+    background: #fef7f7;
+    padding: 10px;
+    border-radius: 3px;
+    border-left: 3px solid #dc3232;
+    margin-top: 10px;
+}
+
+#test-gtin {
+    width: 200px;
+    padding: 5px;
+    margin-right: 10px;
+}
+
+.gtin-examples {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.gtin-examples strong {
+    color: #333;
+} 

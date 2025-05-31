@@ -627,4 +627,40 @@ class Compare_Pricing_Admin {
             'errors' => $errors
         ));
     }
+    
+    public function enqueue_admin_scripts($hook) {
+        // Only load on our settings page
+        if ($hook !== 'settings_page_compare-pricing') {
+            return;
+        }
+        
+        // Enqueue admin styles
+        wp_enqueue_style(
+            'compare-pricing-admin',
+            COMPARE_PRICING_URL . 'admin/css/admin.css',
+            array(),
+            COMPARE_PRICING_VERSION
+        );
+        
+        // Enqueue admin scripts
+        wp_enqueue_script(
+            'compare-pricing-admin',
+            COMPARE_PRICING_URL . 'admin/js/admin.js',
+            array('jquery'),
+            COMPARE_PRICING_VERSION,
+            true
+        );
+        
+        // Localize script for AJAX
+        wp_localize_script('compare-pricing-admin', 'comparePricingAdmin', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('test_api_nonce'),
+            'strings' => array(
+                'testing' => 'Testing...',
+                'success' => 'Success!',
+                'error' => 'Error!',
+                'warning' => 'Warning!'
+            )
+        ));
+    }
 } 
