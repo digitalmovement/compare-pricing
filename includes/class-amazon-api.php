@@ -11,6 +11,8 @@ class Compare_Pricing_Amazon_API {
     }
     
     public function search_products($query, $max_results = 10) {
+        $this->log_debug('Amazon API search called with query: ' . $query);
+        
         if (empty($this->api_key)) {
             $this->log_debug('Amazon API key not configured');
             return array(
@@ -26,6 +28,8 @@ class Compare_Pricing_Amazon_API {
                 )
             );
         }
+        
+        $this->log_debug('Amazon API key found: ' . substr($this->api_key, 0, 8) . '...');
         
         $debug_info = array();
         

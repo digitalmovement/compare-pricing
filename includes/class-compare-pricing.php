@@ -170,46 +170,68 @@ class Compare_Pricing {
                 return;
             }
 
-            // Check if API classes exist
-            if (!$this->ebay_api || !$this->amazon_api) {
-                error_log('Compare Pricing: API classes not initialized');
-                wp_send_json_error('API services not available');
-                return;
-            }
-
             $all_results = array();
             $errors = array();
+            $api_attempts = 0;
+            $successful_apis = 0;
 
-            // Get eBay results using GTIN
-            error_log('Compare Pricing: Calling eBay API with GTIN: ' . $gtin);
-            $ebay_results = $this->ebay_api->search_products($gtin, 5);
-            
-            if (is_wp_error($ebay_results)) {
-                error_log('Compare Pricing: eBay API Error - ' . $ebay_results->get_error_message());
-                $errors['ebay'] = $ebay_results->get_error_message();
-            } elseif (!empty($ebay_results)) {
-                $all_results = array_merge($all_results, $ebay_results);
-                error_log('Compare Pricing: Found ' . count($ebay_results) . ' eBay results');
-            }
-
-            // Get Amazon results using GTIN
-            error_log('Compare Pricing: Calling Amazon API with GTIN: ' . $gtin);
-            $amazon_result = $this->amazon_api->search_products($gtin, 5);
-
-            if ($amazon_result['success'] && !empty($amazon_result['products'])) {
-                $all_results = array_merge($all_results, $amazon_result['products']);
-                error_log('Compare Pricing: Found ' . count($amazon_result['products']) . ' Amazon results');
-            } elseif (!$amazon_result['success']) {
-                error_log('Compare Pricing: Amazon API Error - ' . $amazon_result['error']);
-                $errors['amazon'] = $amazon_result['error'];
-            }
-
-            // If no results from either platform
-            if (empty($all_results)) {
-                $error_message = 'No results found';
-                if (!empty($errors)) {
-                    $error_message .= '. Errors: ' . implode(', ', $errors);
+            // Try eBay API
+            if ($this->ebay_api) {
+                $api_attempts++;
+                error_log('Compare Pricing: Calling eBay API with GTIN: ' . $gtin);
+                $ebay_results = $this->ebay_api->search_products($gtin, 5);
+                
+                if (is_wp_error($ebay_results)) {
+                    error_log('Compare Pricing: eBay API Error - ' . $ebay_results->get_error_message());
+                    $errors['ebay'] = $ebay_results->get_error_message();
+                } elseif (!empty($ebay_results)) {
+                    $all_results = array_merge($all_results, $ebay_results);
+                    $successful_apis++;
+                    error_log('Compare Pricing: Found ' . count($ebay_results) . ' eBay results');
+                } else {
+                    error_log('Compare Pricing: eBay API returned empty results');
+                    $errors['ebay'] = 'No results found on eBay';
                 }
+            } else {
+                error_log('Compare Pricing: eBay API not initialized');
+                $errors['ebay'] = 'eBay API not configured';
+            }
+
+            // Try Amazon API
+            if ($this->amazon_api) {
+                $api_attempts++;
+                error_log('Compare Pricing: Calling Amazon API with GTIN: ' . $gtin);
+                $amazon_result = $this->amazon_api->search_products($gtin, 5);
+
+                if ($amazon_result['success'] && !empty($amazon_result['products'])) {
+                    $all_results = array_merge($all_results, $amazon_result['products']);
+                    $successful_apis++;
+                    error_log('Compare Pricing: Found ' . count($amazon_result['products']) . ' Amazon results');
+                } elseif (!$amazon_result['success']) {
+                    error_log('Compare Pricing: Amazon API Error - ' . $amazon_result['error']);
+                    $errors['amazon'] = $amazon_result['error'];
+                } else {
+                    error_log('Compare Pricing: Amazon API returned empty results');
+                    $errors['amazon'] = 'No results found on Amazon';
+                }
+            } else {
+                error_log('Compare Pricing: Amazon API not initialized');
+                $errors['amazon'] = 'Amazon API not configured';
+            }
+
+            // Only fail if NO APIs worked AND we have no results
+            if (empty($all_results)) {
+                $error_message = 'No results found from any platform';
+                
+                if ($api_attempts === 0) {
+                    $error_message = 'No APIs are configured';
+                } elseif ($successful_apis === 0) {
+                    $error_message = 'All APIs failed or returned no results';
+                    if (!empty($errors)) {
+                        $error_message .= '. Errors: ' . implode(', ', $errors);
+                    }
+                }
+                
                 error_log('Compare Pricing: ' . $error_message);
                 wp_send_json_error($error_message);
                 return;
@@ -246,6 +268,8 @@ class Compare_Pricing {
                 'ebay_count' => count(array_filter($all_results, function($r) { return $r['source'] === 'ebay'; })),
                 'amazon_count' => count(array_filter($all_results, function($r) { return $r['source'] === 'amazon'; })),
                 'errors' => $errors,
+                'successful_apis' => $successful_apis,
+                'total_apis' => $api_attempts,
                 'cached' => false
             ));
             

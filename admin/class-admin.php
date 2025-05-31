@@ -25,7 +25,13 @@ class Compare_Pricing_Admin {
     }
     
     public function init_settings() {
-        register_setting('compare_pricing_settings', 'compare_pricing_options');
+        // Register individual settings instead of array
+        register_setting('compare_pricing_settings', 'compare_pricing_ebay_app_id');
+        register_setting('compare_pricing_settings', 'compare_pricing_ebay_dev_id');
+        register_setting('compare_pricing_settings', 'compare_pricing_ebay_cert_id');
+        register_setting('compare_pricing_settings', 'compare_pricing_amazon_api_key');
+        register_setting('compare_pricing_settings', 'compare_pricing_cache_duration');
+        register_setting('compare_pricing_settings', 'compare_pricing_sandbox_mode');
         
         // eBay API Settings
         add_settings_section(
@@ -292,30 +298,26 @@ if (function_exists('compare_pricing_display')) {
     
     // Field callbacks
     public function ebay_app_id_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['ebay_app_id']) ? $options['ebay_app_id'] : '';
-        echo '<input type="text" name="compare_pricing_options[ebay_app_id]" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Your eBay Application ID (Client ID)</p>';
+        $value = get_option('compare_pricing_ebay_app_id', '');
+        echo '<input type="text" name="compare_pricing_ebay_app_id" value="' . esc_attr($value) . '" class="regular-text" />';
+        echo '<p class="description">Your eBay App ID from the eBay Developer Program</p>';
     }
     
     public function ebay_dev_id_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['ebay_dev_id']) ? $options['ebay_dev_id'] : '';
-        echo '<input type="text" name="compare_pricing_options[ebay_dev_id]" value="' . esc_attr($value) . '" class="regular-text" />';
+        $value = get_option('compare_pricing_ebay_dev_id', '');
+        echo '<input type="text" name="compare_pricing_ebay_dev_id" value="' . esc_attr($value) . '" class="regular-text" />';
         echo '<p class="description">Your eBay Developer ID</p>';
     }
     
     public function ebay_cert_id_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['ebay_cert_id']) ? $options['ebay_cert_id'] : '';
-        echo '<input type="password" name="compare_pricing_options[ebay_cert_id]" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Your eBay Certificate ID (Client Secret)</p>';
+        $value = get_option('compare_pricing_ebay_cert_id', '');
+        echo '<input type="text" name="compare_pricing_ebay_cert_id" value="' . esc_attr($value) . '" class="regular-text" />';
+        echo '<p class="description">Your eBay Cert ID (Client Secret)</p>';
     }
     
     public function amazon_access_key_callback() {
-        $options = get_option('compare_pricing_options');
-        $value = isset($options['amazon_api_key']) ? $options['amazon_api_key'] : '';
-        echo '<input type="text" id="amazon_api_key" name="compare_pricing_options[amazon_api_key]" value="' . esc_attr($value) . '" class="regular-text" />';
+        $value = get_option('compare_pricing_amazon_api_key', '');
+        echo '<input type="text" id="amazon_api_key" name="compare_pricing_amazon_api_key" value="' . esc_attr($value) . '" class="regular-text" />';
         echo '<p class="description">Your ASIN Data API key from <a href="https://app.asindataapi.com/" target="_blank">asindataapi.com</a></p>';
     }
     
@@ -330,17 +332,15 @@ if (function_exists('compare_pricing_display')) {
     }
     
     public function cache_duration_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['cache_duration']) ? $options['cache_duration'] : 24;
-        echo '<input type="number" name="compare_pricing_options[cache_duration]" value="' . esc_attr($value) . '" min="1" max="168" />';
+        $value = get_option('compare_pricing_cache_duration', 24);
+        echo '<input type="number" name="compare_pricing_cache_duration" value="' . esc_attr($value) . '" min="1" max="168" />';
         echo '<p class="description">How long to cache API results (1-168 hours)</p>';
     }
     
     public function sandbox_mode_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['sandbox_mode']) ? $options['sandbox_mode'] : 0;
-        echo '<input type="checkbox" name="compare_pricing_options[sandbox_mode]" value="1" ' . checked(1, $value, false) . ' />';
-        echo '<label for="sandbox_mode">Enable sandbox/testing mode</label>';
+        $value = get_option('compare_pricing_sandbox_mode', 0);
+        echo '<input type="checkbox" name="compare_pricing_sandbox_mode" value="1" ' . checked($value, 1, false) . ' />';
+        echo '<label>Enable sandbox mode for testing eBay API</label>';
     }
     
     // AJAX handlers for API testing
