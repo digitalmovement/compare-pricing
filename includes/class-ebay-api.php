@@ -7,37 +7,46 @@ class Compare_Pricing_eBay_API {
     private $dev_id;
     private $sandbox = false; // Set to true for testing
     
-    public function __construct() {
-        $options = get_option('compare_pricing_options', array());
-        $this->app_id = isset($options['ebay_app_id']) ? $options['ebay_app_id'] : '';
-        $this->cert_id = isset($options['ebay_cert_id']) ? $options['ebay_cert_id'] : '';
-        $this->dev_id = isset($options['ebay_dev_id']) ? $options['ebay_dev_id'] : '';
-        $this->sandbox = isset($options['sandbox_mode']) ? $options['sandbox_mode'] : false;
+    public function __construct($options = array()) {
+        $this->app_id = isset($options['ebay_app_id']) ? $options['ebay_app_id'] : get_option('compare_pricing_ebay_app_id', '');
+        $this->cert_id = isset($options['ebay_cert_id']) ? $options['ebay_cert_id'] : get_option('compare_pricing_ebay_cert_id', '');
+        $this->dev_id = isset($options['ebay_dev_id']) ? $options['ebay_dev_id'] : get_option('compare_pricing_ebay_dev_id', '');
+        $this->sandbox = isset($options['sandbox_mode']) ? $options['sandbox_mode'] : get_option('compare_pricing_sandbox_mode', 0);
     }
     
-    public function search_by_gtin($gtin) {
+    public function search_products($query, $limit = 10) {
         if (empty($this->app_id)) {
             return new WP_Error('no_api_key', 'eBay API credentials not configured');
+        }
+        
+        // Get access token first
+        $access_token = $this->get_access_token();
+        if (is_wp_error($access_token)) {
+            return $access_token;
         }
         
         $endpoint = $this->sandbox ? 
             'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search' :
             'https://api.ebay.com/buy/browse/v1/item_summary/search';
         
+        // Build query parameters
+        $params = array(
+            'q' => $query,
+            'limit' => min($limit, 50), // eBay max is 50
+            'sort' => 'price',
+            'filter' => 'buyingOptions:{FIXED_PRICE}',
+            'fieldgroups' => 'MATCHING_ITEMS,EXTENDED'
+        );
+        
+        $url = $endpoint . '?' . http_build_query($params);
+        
+        error_log('eBay API Request URL: ' . $url);
+        
         $headers = array(
-            'Authorization' => 'Bearer ' . $this->get_access_token(),
+            'Authorization' => 'Bearer ' . $access_token,
             'Content-Type' => 'application/json',
             'X-EBAY-C-MARKETPLACE-ID' => 'EBAY_US'
         );
-        
-        $query_params = array(
-            'gtin' => $gtin,
-            'limit' => 10,
-            'sort' => 'price',
-            'filter' => 'buyingOptions:{FIXED_PRICE},itemLocationCountry:US'
-        );
-        
-        $url = $endpoint . '?' . http_build_query($query_params);
         
         $response = wp_remote_get($url, array(
             'headers' => $headers,
@@ -45,29 +54,173 @@ class Compare_Pricing_eBay_API {
         ));
         
         if (is_wp_error($response)) {
+            error_log('eBay API Request Error: ' . $response->get_error_message());
             return $response;
         }
         
+        $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
         
-        if (isset($data['itemSummaries']) && !empty($data['itemSummaries'])) {
-            $cheapest_item = $data['itemSummaries'][0];
-            
-            return array(
-                'price' => $cheapest_item['price']['value'],
-                'currency' => $cheapest_item['price']['currency'],
-                'url' => $cheapest_item['itemWebUrl'],
-                'title' => $cheapest_item['title']
-            );
+        error_log('eBay API Response Code: ' . $response_code);
+        error_log('eBay API Response Body: ' . substr($body, 0, 500) . '...');
+        
+        if ($response_code !== 200) {
+            return new WP_Error('api_error', 'eBay API returned status: ' . $response_code . ' - ' . $body);
         }
         
-        return false;
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return new WP_Error('json_error', 'Failed to parse eBay API response');
+        }
+        
+        // Check for API errors
+        if (isset($data['errors'])) {
+            $error_msg = 'eBay API Error: ';
+            foreach ($data['errors'] as $error) {
+                $error_msg .= $error['message'] . ' ';
+            }
+            return new WP_Error('api_error', $error_msg);
+        }
+        
+        // Process results
+        $products = array();
+        
+        if (isset($data['itemSummaries']) && is_array($data['itemSummaries'])) {
+            foreach ($data['itemSummaries'] as $item) {
+                // Extract price
+                $price = 0;
+                if (isset($item['price']['value'])) {
+                    $price = floatval($item['price']['value']);
+                }
+                
+                // Skip items without valid prices
+                if ($price <= 0) {
+                    continue;
+                }
+                
+                $product = array(
+                    'title' => $item['title'] ?? 'Unknown Product',
+                    'price' => $price,
+                    'currency' => $item['price']['currency'] ?? 'USD',
+                    'url' => $item['itemWebUrl'] ?? '',
+                    'image' => $item['image']['imageUrl'] ?? '',
+                    'source' => 'ebay',
+                    'condition' => $item['condition'] ?? 'Unknown',
+                    'seller' => $item['seller']['username'] ?? 'Unknown',
+                    'shipping' => isset($item['shippingOptions'][0]['shippingCost']['value']) ? 
+                                 floatval($item['shippingOptions'][0]['shippingCost']['value']) : 0,
+                    'location' => $item['itemLocation']['country'] ?? 'US'
+                );
+                
+                // Add seller feedback if available
+                if (isset($item['seller']['feedbackPercentage'])) {
+                    $product['seller_rating'] = $item['seller']['feedbackPercentage'];
+                }
+                
+                $products[] = $product;
+            }
+        }
+        
+        error_log('eBay API: Processed ' . count($products) . ' products from ' . count($data['itemSummaries'] ?? array()) . ' items');
+        
+        return $products;
+    }
+    
+    public function search_by_gtin($gtin) {
+        // For GTIN search, we can use the gtin parameter
+        if (empty($this->app_id)) {
+            return new WP_Error('no_api_key', 'eBay API credentials not configured');
+        }
+        
+        $access_token = $this->get_access_token();
+        if (is_wp_error($access_token)) {
+            return $access_token;
+        }
+        
+        $endpoint = $this->sandbox ? 
+            'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search' :
+            'https://api.ebay.com/buy/browse/v1/item_summary/search';
+        
+        // Use GTIN filter for more accurate results
+        $params = array(
+            'gtin' => $gtin,
+            'limit' => 10,
+            'sort' => 'price',
+            'filter' => 'buyingOptions:{FIXED_PRICE}',
+            'fieldgroups' => 'MATCHING_ITEMS,EXTENDED'
+        );
+        
+        $url = $endpoint . '?' . http_build_query($params);
+        
+        error_log('eBay GTIN Search URL: ' . $url);
+        
+        $headers = array(
+            'Authorization' => 'Bearer ' . $access_token,
+            'Content-Type' => 'application/json',
+            'X-EBAY-C-MARKETPLACE-ID' => 'EBAY_US'
+        );
+        
+        $response = wp_remote_get($url, array(
+            'headers' => $headers,
+            'timeout' => 30
+        ));
+        
+        if (is_wp_error($response)) {
+            error_log('eBay GTIN API Request Error: ' . $response->get_error_message());
+            // Fallback to regular search with GTIN as query
+            return $this->search_products($gtin, 10);
+        }
+        
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        
+        if ($response_code !== 200) {
+            error_log('eBay GTIN API Error: ' . $response_code . ' - ' . $body);
+            // Fallback to regular search
+            return $this->search_products($gtin, 10);
+        }
+        
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE || isset($data['errors'])) {
+            // Fallback to regular search
+            return $this->search_products($gtin, 10);
+        }
+        
+        // Process results same as regular search
+        $products = array();
+        
+        if (isset($data['itemSummaries']) && is_array($data['itemSummaries'])) {
+            foreach ($data['itemSummaries'] as $item) {
+                $price = 0;
+                if (isset($item['price']['value'])) {
+                    $price = floatval($item['price']['value']);
+                }
+                
+                if ($price <= 0) continue;
+                
+                $products[] = array(
+                    'title' => $item['title'] ?? 'Unknown Product',
+                    'price' => $price,
+                    'currency' => $item['price']['currency'] ?? 'USD',
+                    'url' => $item['itemWebUrl'] ?? '',
+                    'image' => $item['image']['imageUrl'] ?? '',
+                    'source' => 'ebay',
+                    'condition' => $item['condition'] ?? 'Unknown',
+                    'seller' => $item['seller']['username'] ?? 'Unknown',
+                    'shipping' => isset($item['shippingOptions'][0]['shippingCost']['value']) ? 
+                                 floatval($item['shippingOptions'][0]['shippingCost']['value']) : 0
+                );
+            }
+        }
+        
+        return $products;
     }
     
     private function get_access_token() {
+        // Check for cached token
         $cached_token = get_transient('compare_pricing_ebay_token');
-        
         if ($cached_token) {
             return $cached_token;
         }
@@ -85,177 +238,7 @@ class Compare_Pricing_eBay_API {
         
         $body = 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope';
         
-        $response = wp_remote_post($endpoint, array(
-            'headers' => $headers,
-            'body' => $body,
-            'timeout' => 30
-        ));
-        
-        if (is_wp_error($response)) {
-            return false;
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (isset($data['access_token'])) {
-            // Cache token for slightly less than its expiry time
-            $cache_time = isset($data['expires_in']) ? $data['expires_in'] - 300 : 3300;
-            set_transient('compare_pricing_ebay_token', $data['access_token'], $cache_time);
-            
-            return $data['access_token'];
-        }
-        
-        return false;
-    }
-    
-    public function test_connection() {
-        $debug_info = array();
-        
-        // Step 1: Check if credentials are provided
-        $debug_info['step_1'] = array(
-            'title' => 'Checking API Credentials',
-            'status' => 'checking'
-        );
-        
-        if (empty($this->app_id) || empty($this->cert_id)) {
-            $debug_info['step_1']['status'] = 'error';
-            $debug_info['step_1']['message'] = 'Missing eBay API credentials (App ID or Cert ID)';
-            $debug_info['step_1']['help'] = 'Please ensure you have entered both App ID and Cert ID in the settings above.';
-            return array('success' => false, 'debug' => $debug_info);
-        }
-        
-        $debug_info['step_1']['status'] = 'success';
-        $debug_info['step_1']['message'] = 'API credentials found';
-        $debug_info['step_1']['details'] = array(
-            'App ID Length' => strlen($this->app_id) . ' characters',
-            'Cert ID Length' => strlen($this->cert_id) . ' characters',
-            'App ID Preview' => substr($this->app_id, 0, 8) . '...',
-            'Environment' => $this->sandbox ? 'Sandbox' : 'Production'
-        );
-        
-        // Step 2: Validate credential format
-        $debug_info['step_2'] = array(
-            'title' => 'Validating Credential Format',
-            'status' => 'checking'
-        );
-        
-        $validation_errors = array();
-        
-        // eBay App ID should be around 32 characters
-        if (strlen($this->app_id) < 20 || strlen($this->app_id) > 50) {
-            $validation_errors[] = 'App ID length seems incorrect (should be ~32 characters)';
-        }
-        
-        // eBay Cert ID should be around 32 characters  
-        if (strlen($this->cert_id) < 20 || strlen($this->cert_id) > 50) {
-            $validation_errors[] = 'Cert ID length seems incorrect (should be ~32 characters)';
-        }
-        
-        // Check for common formatting issues
-        if (strpos($this->app_id, ' ') !== false || strpos($this->cert_id, ' ') !== false) {
-            $validation_errors[] = 'Credentials contain spaces (should be removed)';
-        }
-        
-        if (!empty($validation_errors)) {
-            $debug_info['step_2']['status'] = 'warning';
-            $debug_info['step_2']['message'] = 'Potential credential format issues detected';
-            $debug_info['step_2']['warnings'] = $validation_errors;
-        } else {
-            $debug_info['step_2']['status'] = 'success';
-            $debug_info['step_2']['message'] = 'Credential format looks correct';
-        }
-        
-        // Step 3: Test OAuth token generation
-        $debug_info['step_3'] = array(
-            'title' => 'Obtaining Access Token',
-            'status' => 'checking'
-        );
-        
-        // Clear any cached token for testing
-        delete_transient('compare_pricing_ebay_token');
-        
-        $token_result = $this->get_access_token_debug();
-        
-        if (is_wp_error($token_result)) {
-            $debug_info['step_3']['status'] = 'error';
-            $debug_info['step_3']['message'] = $token_result->get_error_message();
-            return array('success' => false, 'debug' => $debug_info);
-        }
-        
-        if (!$token_result['success']) {
-            $debug_info['step_3']['status'] = 'error';
-            $debug_info['step_3']['message'] = $token_result['message'];
-            $debug_info['step_3']['response'] = $token_result['response'];
-            
-            // Add specific help for common errors
-            if (isset($token_result['response']['error']) && $token_result['response']['error'] === 'invalid_client') {
-                $debug_info['step_3']['help'] = array(
-                    'This error means your App ID or Cert ID is incorrect.',
-                    'Common causes:',
-                    '• Wrong App ID or Cert ID copied from eBay Developer account',
-                    '• Using Sandbox credentials for Production (or vice versa)',
-                    '• Extra spaces or characters in the credentials',
-                    '• Credentials from wrong eBay application',
-                    '',
-                    'To fix this:',
-                    '1. Log into your eBay Developer account at developer.ebay.com',
-                    '2. Go to "My Account" → "Application Keys"',
-                    '3. Copy the App ID (Client ID) and Cert ID (Client Secret) exactly',
-                    '4. Make sure you\'re using the right environment (Production vs Sandbox)',
-                    '5. Ensure no extra spaces when pasting'
-                );
-            }
-            
-            return array('success' => false, 'debug' => $debug_info);
-        }
-        
-        $debug_info['step_3']['status'] = 'success';
-        $debug_info['step_3']['message'] = 'Access token obtained successfully';
-        $debug_info['step_3']['token_preview'] = substr($token_result['token'], 0, 20) . '...';
-        $debug_info['step_3']['expires_in'] = $token_result['expires_in'] . ' seconds';
-        
-        // Step 4: Test API search functionality
-        $debug_info['step_4'] = array(
-            'title' => 'Testing Search API',
-            'status' => 'checking'
-        );
-        
-        $search_result = $this->test_search_api($token_result['token']);
-        
-        if (is_wp_error($search_result)) {
-            $debug_info['step_4']['status'] = 'error';
-            $debug_info['step_4']['message'] = $search_result->get_error_message();
-            return array('success' => false, 'debug' => $debug_info);
-        }
-        
-        if (!$search_result['success']) {
-            $debug_info['step_4']['status'] = 'error';
-            $debug_info['step_4']['message'] = $search_result['message'];
-            $debug_info['step_4']['response'] = $search_result['response'];
-            return array('success' => false, 'debug' => $debug_info);
-        }
-        
-        $debug_info['step_4']['status'] = 'success';
-        $debug_info['step_4']['message'] = 'Search API working correctly';
-        $debug_info['step_4']['results_found'] = $search_result['results_count'];
-        
-        return array('success' => true, 'debug' => $debug_info);
-    }
-    
-    private function get_access_token_debug() {
-        $endpoint = $this->sandbox ?
-            'https://api.sandbox.ebay.com/identity/v1/oauth2/token' :
-            'https://api.ebay.com/identity/v1/oauth2/token';
-        
-        $credentials = base64_encode($this->app_id . ':' . $this->cert_id);
-        
-        $headers = array(
-            'Authorization' => 'Basic ' . $credentials,
-            'Content-Type' => 'application/x-www-form-urlencoded'
-        );
-        
-        $body = 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope';
+        error_log('eBay Token Request: ' . $endpoint);
         
         $response = wp_remote_post($endpoint, array(
             'headers' => $headers,
@@ -264,107 +247,127 @@ class Compare_Pricing_eBay_API {
         ));
         
         if (is_wp_error($response)) {
-            return new WP_Error('http_error', 'HTTP request failed: ' . $response->get_error_message());
+            error_log('eBay Token Error: ' . $response->get_error_message());
+            return $response;
         }
         
         $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
+        
+        error_log('eBay Token Response Code: ' . $response_code);
         
         if ($response_code !== 200) {
-            $error_message = 'HTTP ' . $response_code;
-            if (isset($data['error_description'])) {
-                $error_message .= ': ' . $data['error_description'];
-            } elseif (isset($data['error'])) {
-                $error_message .= ': ' . $data['error'];
-            }
-            
+            error_log('eBay Token Error Response: ' . $body);
+            return new WP_Error('token_error', 'Failed to get eBay access token: ' . $response_code);
+        }
+        
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return new WP_Error('json_error', 'Failed to parse token response');
+        }
+        
+        if (!isset($data['access_token'])) {
+            return new WP_Error('token_error', 'No access token in response');
+        }
+        
+        $token = $data['access_token'];
+        $expires_in = isset($data['expires_in']) ? intval($data['expires_in']) : 7200;
+        
+        // Cache token for slightly less than expiry time
+        set_transient('compare_pricing_ebay_token', $token, $expires_in - 300);
+        
+        error_log('eBay Token obtained successfully, expires in: ' . $expires_in . ' seconds');
+        
+        return $token;
+    }
+    
+    public function test_connection() {
+        if (empty($this->app_id) || empty($this->cert_id)) {
             return array(
                 'success' => false,
-                'message' => $error_message,
-                'response' => $data,
-                'request_details' => array(
-                    'endpoint' => $endpoint,
-                    'credentials_length' => strlen($credentials),
-                    'app_id_preview' => substr($this->app_id, 0, 8) . '...',
-                    'cert_id_preview' => substr($this->cert_id, 0, 8) . '...'
+                'error' => 'eBay API credentials not configured',
+                'debug' => array(
+                    'config_check' => array(
+                        'status' => 'error',
+                        'title' => 'Configuration Check',
+                        'message' => 'eBay API credentials missing',
+                        'help' => 'Please configure your eBay App ID and Cert ID'
+                    )
                 )
             );
         }
         
-        if (!isset($data['access_token'])) {
-            return array(
-                'success' => false,
-                'message' => 'No access token in response',
-                'response' => $data
+        $debug_info = array();
+        
+        // Step 1: Configuration check
+        $debug_info['config_check'] = array(
+            'status' => 'success',
+            'title' => 'Configuration Check',
+            'message' => 'eBay credentials configured',
+            'details' => array(
+                'App ID' => substr($this->app_id, 0, 8) . '...',
+                'Cert ID' => substr($this->cert_id, 0, 8) . '...',
+                'Dev ID' => !empty($this->dev_id) ? substr($this->dev_id, 0, 8) . '...' : 'Not set',
+                'Sandbox Mode' => $this->sandbox ? 'Yes' : 'No'
+            )
+        );
+        
+        // Step 2: Test token retrieval
+        $token = $this->get_access_token();
+        
+        if (is_wp_error($token)) {
+            $debug_info['token_test'] = array(
+                'status' => 'error',
+                'title' => 'Token Retrieval',
+                'message' => 'Failed to get access token: ' . $token->get_error_message(),
+                'help' => 'Check your App ID and Cert ID credentials'
             );
-        }
-        
-        // Cache the token
-        $cache_time = isset($data['expires_in']) ? $data['expires_in'] - 300 : 3300;
-        set_transient('compare_pricing_ebay_token', $data['access_token'], $cache_time);
-        
-        return array(
-            'success' => true,
-            'token' => $data['access_token'],
-            'expires_in' => $data['expires_in'] ?? 3600
-        );
-    }
-    
-    private function test_search_api($token) {
-        $endpoint = $this->sandbox ? 
-            'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search' :
-            'https://api.ebay.com/buy/browse/v1/item_summary/search';
-        
-        $headers = array(
-            'Authorization' => 'Bearer ' . $token,
-            'Content-Type' => 'application/json',
-            'X-EBAY-C-MARKETPLACE-ID' => 'EBAY_US'
-        );
-        
-        // Use a common product GTIN for testing (iPhone 13)
-        $test_gtin = '194252707050';
-        
-        $query_params = array(
-            'gtin' => $test_gtin,
-            'limit' => 5,
-            'sort' => 'price',
-            'filter' => 'buyingOptions:{FIXED_PRICE}'
-        );
-        
-        $url = $endpoint . '?' . http_build_query($query_params);
-        
-        $response = wp_remote_get($url, array(
-            'headers' => $headers,
-            'timeout' => 30
-        ));
-        
-        if (is_wp_error($response)) {
-            return new WP_Error('search_http_error', 'Search API HTTP request failed: ' . $response->get_error_message());
-        }
-        
-        $response_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if ($response_code !== 200) {
-            $error_message = 'Search API HTTP ' . $response_code;
-            if (isset($data['errors'][0]['message'])) {
-                $error_message .= ': ' . $data['errors'][0]['message'];
-            }
             
             return array(
                 'success' => false,
-                'message' => $error_message,
-                'response' => $data
+                'error' => 'Token retrieval failed',
+                'debug' => $debug_info
             );
         }
         
-        $results_count = isset($data['itemSummaries']) ? count($data['itemSummaries']) : 0;
+        $debug_info['token_test'] = array(
+            'status' => 'success',
+            'title' => 'Token Retrieval',
+            'message' => 'Access token obtained successfully',
+            'details' => array(
+                'Token' => substr($token, 0, 20) . '...'
+            )
+        );
+        
+        // Step 3: Test API call
+        $test_results = $this->search_products('test', 1);
+        
+        if (is_wp_error($test_results)) {
+            $debug_info['api_test'] = array(
+                'status' => 'error',
+                'title' => 'API Test Call',
+                'message' => 'API call failed: ' . $test_results->get_error_message(),
+                'help' => 'Check your API permissions and marketplace access'
+            );
+            
+            return array(
+                'success' => false,
+                'error' => 'API test failed',
+                'debug' => $debug_info
+            );
+        }
+        
+        $debug_info['api_test'] = array(
+            'status' => 'success',
+            'title' => 'API Test Call',
+            'message' => 'API call successful, found ' . count($test_results) . ' results',
+            'note' => 'eBay API is working correctly'
+        );
         
         return array(
             'success' => true,
-            'results_count' => $results_count
+            'debug' => $debug_info
         );
     }
     
@@ -376,113 +379,5 @@ class Compare_Pricing_eBay_API {
     // Method to get current environment
     public function get_environment() {
         return $this->sandbox ? 'Sandbox' : 'Production';
-    }
-    
-    /**
-     * Search for products on eBay
-     * 
-     * @param string $search_term The search term or GTIN
-     * @param int $limit Number of results to return
-     * @return array|WP_Error Array of products or error
-     */
-    public function search_products($search_term, $limit = 5) {
-        // Check if we have required credentials
-        if (empty($this->app_id)) {
-            return new WP_Error('missing_credentials', 'eBay App ID is required');
-        }
-        
-        // Check cache first
-        $cache_key = 'ebay_search_' . md5($search_term . $limit);
-        $cached_result = get_transient($cache_key);
-        
-        if ($cached_result !== false) {
-            return $cached_result;
-        }
-        
-        // Prepare API request
-        $endpoint = $this->sandbox ? 
-            'https://svcs.sandbox.ebay.com/services/search/FindingService/v1' :
-            'https://svcs.ebay.com/services/search/FindingService/v1';
-        
-        $params = array(
-            'OPERATION-NAME' => 'findItemsByKeywords',
-            'SERVICE-VERSION' => '1.0.0',
-            'SECURITY-APPNAME' => $this->app_id,
-            'RESPONSE-DATA-FORMAT' => 'JSON',
-            'REST-PAYLOAD' => '',
-            'keywords' => $search_term,
-            'paginationInput.entriesPerPage' => $limit,
-            'sortOrder' => 'PricePlusShippingLowest'
-        );
-        
-        // Build query string
-        $query_string = http_build_query($params);
-        $url = $endpoint . '?' . $query_string;
-        
-        // Make API request
-        $response = wp_remote_get($url, array(
-            'timeout' => 30,
-            'headers' => array(
-                'User-Agent' => 'Compare-Pricing-Plugin/1.0'
-            )
-        ));
-        
-        if (is_wp_error($response)) {
-            return $response;
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return new WP_Error('json_error', 'Invalid JSON response from eBay API');
-        }
-        
-        // Parse results
-        $products = $this->parse_ebay_response($data);
-        
-        // Cache results for 1 hour
-        set_transient($cache_key, $products, HOUR_IN_SECONDS);
-        
-        return $products;
-    }
-    
-    /**
-     * Parse eBay API response
-     */
-    private function parse_ebay_response($data) {
-        $products = array();
-        
-        if (!isset($data['findItemsByKeywordsResponse'][0]['searchResult'][0]['item'])) {
-            return $products;
-        }
-        
-        $items = $data['findItemsByKeywordsResponse'][0]['searchResult'][0]['item'];
-        
-        foreach ($items as $item) {
-            $product = array(
-                'title' => isset($item['title'][0]) ? $item['title'][0] : 'No title',
-                'price' => 0,
-                'url' => isset($item['viewItemURL'][0]) ? $item['viewItemURL'][0] : '',
-                'image' => '',
-                'source' => 'ebay',
-                'rating' => 0,
-                'review_count' => 0
-            );
-            
-            // Get price
-            if (isset($item['sellingStatus'][0]['currentPrice'][0]['__value__'])) {
-                $product['price'] = floatval($item['sellingStatus'][0]['currentPrice'][0]['__value__']);
-            }
-            
-            // Get image
-            if (isset($item['galleryURL'][0])) {
-                $product['image'] = $item['galleryURL'][0];
-            }
-            
-            $products[] = $product;
-        }
-        
-        return $products;
     }
 } 
