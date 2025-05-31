@@ -11,7 +11,7 @@ class Compare_Pricing_eBay_API {
         $options = get_option('compare_pricing_options', array());
         $this->app_id = isset($options['ebay_app_id']) ? $options['ebay_app_id'] : '';
         $this->cert_id = isset($options['ebay_cert_id']) ? $options['ebay_cert_id'] : '';
-        $this->dev_id = get_option('compare_pricing_ebay_dev_id');
+        $this->dev_id = isset($options['ebay_dev_id']) ? $options['ebay_dev_id'] : '';
         $this->sandbox = isset($options['sandbox_mode']) ? $options['sandbox_mode'] : false;
     }
     
