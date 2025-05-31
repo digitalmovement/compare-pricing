@@ -1,0 +1,252 @@
+.compare-pricing-container {
+    max-width: 1200px;
+    margin: 20px 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.compare-pricing-container h3 {
+    color: #333;
+    border-bottom: 2px solid #0073aa;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.pricing-section {
+    margin-bottom: 30px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.pricing-section h4 {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    color: #333;
+    font-size: 18px;
+}
+
+.platform-logo {
+    height: 24px;
+    margin-right: 10px;
+}
+
+.ebay-section {
+    border-left: 4px solid #e53238;
+}
+
+.amazon-section {
+    border-left: 4px solid #ff9900;
+}
+
+.best-deals-section {
+    border-left: 4px solid #28a745;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 15px;
+}
+
+.pricing-item {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.pricing-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+.pricing-item.ebay {
+    border-top: 3px solid #e53238;
+}
+
+.pricing-item.amazon {
+    border-top: 3px solid #ff9900;
+}
+
+.item-image {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.item-image img {
+    max-width: 100%;
+    height: 120px;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.item-details {
+    text-align: left;
+}
+
+.item-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: #333;
+    line-height: 1.3;
+    min-height: 36px;
+}
+
+.item-price {
+    font-size: 18px;
+    font-weight: bold;
+    color: #e53238;
+    margin-bottom: 8px;
+}
+
+.amazon .item-price {
+    color: #ff9900;
+}
+
+.prime-badge {
+    display: inline-block;
+    background: #00a8cc;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.item-rating {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.source-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: white;
+}
+
+.source-badge.ebay {
+    background: #e53238;
+}
+
+.source-badge.amazon {
+    background: #ff9900;
+}
+
+.view-item-btn {
+    display: inline-block;
+    background: #0073aa;
+    color: white;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background-color 0.2s ease;
+    margin-top: 8px;
+}
+
+.view-item-btn:hover {
+    background: #005a87;
+    color: white;
+    text-decoration: none;
+}
+
+.ebay .view-item-btn {
+    background: #e53238;
+}
+
+.ebay .view-item-btn:hover {
+    background: #c41e3a;
+}
+
+.amazon .view-item-btn {
+    background: #ff9900;
+}
+
+.amazon .view-item-btn:hover {
+    background: #e68900;
+}
+
+.error {
+    color: #dc3545;
+    font-style: italic;
+    padding: 10px;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+}
+
+.no-results {
+    color: #6c757d;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+.loading::after {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #0073aa;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .pricing-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .pricing-section h4 {
+        font-size: 16px;
+    }
+    
+    .platform-logo {
+        height: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .compare-pricing-container {
+        margin: 10px 0;
+    }
+    
+    .pricing-section {
+        padding: 15px;
+    }
+    
+    .pricing-item {
+        padding: 12px;
+    }
+} 

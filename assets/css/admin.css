@@ -1,0 +1,146 @@
+.api-debug-info {
+    margin-top: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+}
+
+.debug-step {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.debug-step:last-child {
+    border-bottom: none;
+}
+
+.debug-step h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+}
+
+.debug-step p {
+    margin: 5px 0;
+    font-size: 13px;
+}
+
+.debug-step small {
+    color: #666;
+    font-size: 12px;
+}
+
+.debug-success {
+    border-left: 4px solid #46b450;
+    background-color: #f7fcf0;
+}
+
+.debug-success h4 {
+    color: #46b450;
+}
+
+.debug-warning {
+    border-left: 4px solid #ffb900;
+    background-color: #fff8e5;
+}
+
+.debug-warning h4 {
+    color: #ffb900;
+}
+
+.debug-error {
+    border-left: 4px solid #dc3232;
+    background-color: #fef7f1;
+}
+
+.debug-error h4 {
+    color: #dc3232;
+}
+
+.debug-details {
+    background: rgba(0,0,0,0.05);
+    padding: 10px;
+    border-radius: 3px;
+    margin: 10px 0;
+}
+
+.debug-details p {
+    margin: 3px 0;
+    font-size: 12px;
+}
+
+.debug-warnings {
+    background: rgba(255, 185, 0, 0.1);
+    padding: 10px;
+    border-radius: 3px;
+    margin: 10px 0;
+}
+
+.debug-warnings li {
+    font-size: 12px;
+    margin: 3px 0;
+}
+
+.debug-help {
+    background: rgba(0, 115, 170, 0.1);
+    padding: 15px;
+    border-radius: 3px;
+    margin: 10px 0;
+    border-left: 3px solid #0073aa;
+}
+
+.debug-help p {
+    margin: 5px 0;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.debug-step details {
+    margin-top: 10px;
+}
+
+.debug-step summary {
+    cursor: pointer;
+    font-weight: bold;
+    color: #0073aa;
+}
+
+.debug-step pre {
+    background: #f1f1f1;
+    padding: 10px;
+    border-radius: 3px;
+    font-size: 11px;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+#api-test-result {
+    margin-top: 15px;
+}
+
+#clear-token-cache {
+    margin-left: 10px;
+}
+
+.notice.notice-info ol {
+    margin: 10px 0 10px 20px;
+}
+
+.notice.notice-info li {
+    margin: 5px 0;
+}
+
+.notice.notice-warning ul {
+    margin: 10px 0 10px 20px;
+}
+
+.notice.notice-warning li {
+    margin: 5px 0;
+}
+
+.notice.notice-warning code {
+    background: #f1f1f1;
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-family: monospace;
+} 
