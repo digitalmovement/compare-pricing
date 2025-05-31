@@ -30,7 +30,7 @@ class Compare_Pricing_Amazon_API {
         $params = array(
             'api_key' => $this->api_key,
             'type' => 'search',
-            'amazon_domain' => 'amazon.com',
+            'amazon_domain' => 'amazon.co.uk',
             'search_term' => $query,
             'max_page' => 1,
             'output' => 'json'
@@ -73,7 +73,7 @@ class Compare_Pricing_Amazon_API {
         $params = array(
             'api_key' => $this->api_key,
             'type' => 'product',
-            'amazon_domain' => 'amazon.com',
+            'amazon_domain' => 'amazon.co.uk',
             'asin' => $asin,
             'output' => 'json'
         );
