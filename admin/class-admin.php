@@ -32,6 +32,7 @@ class Compare_Pricing_Admin {
         register_setting('compare_pricing_settings', 'compare_pricing_amazon_api_key');
         register_setting('compare_pricing_settings', 'compare_pricing_cache_duration');
         register_setting('compare_pricing_settings', 'compare_pricing_sandbox_mode');
+        register_setting('compare_pricing_settings', 'compare_pricing_min_keyword_matches');
         
         // eBay API Settings
         add_settings_section(
@@ -101,6 +102,14 @@ class Compare_Pricing_Admin {
             'sandbox_mode',
             'Sandbox Mode',
             array($this, 'sandbox_mode_callback'),
+            'compare_pricing_settings',
+            'general_section'
+        );
+        
+        add_settings_field(
+            'min_keyword_matches',
+            'Minimum Keyword Matches',
+            array($this, 'min_keyword_matches_callback'),
             'compare_pricing_settings',
             'general_section'
         );
@@ -341,6 +350,16 @@ if (function_exists('compare_pricing_display')) {
         $value = get_option('compare_pricing_sandbox_mode', 0);
         echo '<input type="checkbox" name="compare_pricing_sandbox_mode" value="1" ' . checked($value, 1, false) . ' />';
         echo '<label>Enable sandbox mode for testing eBay API</label>';
+    }
+    
+    public function min_keyword_matches_callback() {
+        $value = get_option('compare_pricing_min_keyword_matches', 2);
+        echo '<select name="compare_pricing_min_keyword_matches">';
+        echo '<option value="1"' . selected($value, 1, false) . '>1 keyword match (loose)</option>';
+        echo '<option value="2"' . selected($value, 2, false) . '>2 keyword matches (recommended)</option>';
+        echo '<option value="3"' . selected($value, 3, false) . '>3 keyword matches (strict)</option>';
+        echo '</select>';
+        echo '<p class="description">How many keywords must match between your product and API results to be considered relevant</p>';
     }
     
     // AJAX handlers for API testing

@@ -158,7 +158,7 @@ class Compare_Pricing {
                 return;
             }
 
-            // Get GTIN from request
+            // Get GTIN and product info from request
             $gtin = isset($_POST['gtin']) ? sanitize_text_field($_POST['gtin']) : '';
             $product_id = isset($_POST['product_id']) ? sanitize_text_field($_POST['product_id']) : '';
 
@@ -170,16 +170,29 @@ class Compare_Pricing {
                 return;
             }
 
+            // Get WooCommerce product title for matching
+            $wc_product_title = $this->get_wc_product_title($product_id);
+            error_log('Compare Pricing: WC Product Title = ' . $wc_product_title);
+
             $all_results = array();
+            $filtered_results = array();
             $errors = array();
             $api_attempts = 0;
             $successful_apis = 0;
+            $filtering_stats = array(
+                'total_found' => 0,
+                'relevant_found' => 0,
+                'ebay_total' => 0,
+                'ebay_relevant' => 0,
+                'amazon_total' => 0,
+                'amazon_relevant' => 0
+            );
 
             // Try eBay API
             if ($this->ebay_api) {
                 $api_attempts++;
                 error_log('Compare Pricing: Calling eBay API with GTIN: ' . $gtin);
-                $ebay_results = $this->ebay_api->search_products($gtin, 5);
+                $ebay_results = $this->ebay_api->search_products($gtin, 10); // Get more results for filtering
                 
                 if (is_wp_error($ebay_results)) {
                     error_log('Compare Pricing: eBay API Error - ' . $ebay_results->get_error_message());
@@ -187,7 +200,23 @@ class Compare_Pricing {
                 } elseif (!empty($ebay_results)) {
                     $all_results = array_merge($all_results, $ebay_results);
                     $successful_apis++;
-                    error_log('Compare Pricing: Found ' . count($ebay_results) . ' eBay results');
+                    $filtering_stats['ebay_total'] = count($ebay_results);
+                    
+                    // Filter eBay results for relevance
+                    if (!empty($wc_product_title)) {
+                        foreach ($ebay_results as $result) {
+                            if ($this->is_relevant_product($result['title'], $wc_product_title)) {
+                                $filtered_results[] = $result;
+                                $filtering_stats['ebay_relevant']++;
+                            }
+                        }
+                    } else {
+                        // If no WC product title, include all results
+                        $filtered_results = array_merge($filtered_results, $ebay_results);
+                        $filtering_stats['ebay_relevant'] = count($ebay_results);
+                    }
+                    
+                    error_log('Compare Pricing: Found ' . count($ebay_results) . ' eBay results, ' . $filtering_stats['ebay_relevant'] . ' relevant');
                 } else {
                     error_log('Compare Pricing: eBay API returned empty results');
                     $errors['ebay'] = 'No results found on eBay';
@@ -201,12 +230,28 @@ class Compare_Pricing {
             if ($this->amazon_api) {
                 $api_attempts++;
                 error_log('Compare Pricing: Calling Amazon API with GTIN: ' . $gtin);
-                $amazon_result = $this->amazon_api->search_products($gtin, 5);
+                $amazon_result = $this->amazon_api->search_products($gtin, 10); // Get more results for filtering
 
                 if ($amazon_result['success'] && !empty($amazon_result['products'])) {
                     $all_results = array_merge($all_results, $amazon_result['products']);
                     $successful_apis++;
-                    error_log('Compare Pricing: Found ' . count($amazon_result['products']) . ' Amazon results');
+                    $filtering_stats['amazon_total'] = count($amazon_result['products']);
+                    
+                    // Filter Amazon results for relevance
+                    if (!empty($wc_product_title)) {
+                        foreach ($amazon_result['products'] as $result) {
+                            if ($this->is_relevant_product($result['title'], $wc_product_title)) {
+                                $filtered_results[] = $result;
+                                $filtering_stats['amazon_relevant']++;
+                            }
+                        }
+                    } else {
+                        // If no WC product title, include all results
+                        $filtered_results = array_merge($filtered_results, $amazon_result['products']);
+                        $filtering_stats['amazon_relevant'] = count($amazon_result['products']);
+                    }
+                    
+                    error_log('Compare Pricing: Found ' . count($amazon_result['products']) . ' Amazon results, ' . $filtering_stats['amazon_relevant'] . ' relevant');
                 } elseif (!$amazon_result['success']) {
                     error_log('Compare Pricing: Amazon API Error - ' . $amazon_result['error']);
                     $errors['amazon'] = $amazon_result['error'];
@@ -219,9 +264,16 @@ class Compare_Pricing {
                 $errors['amazon'] = 'Amazon API not configured';
             }
 
+            // Update total stats
+            $filtering_stats['total_found'] = count($all_results);
+            $filtering_stats['relevant_found'] = count($filtered_results);
+
+            // Use filtered results for final output
+            $final_results = $filtered_results;
+
             // Only fail if NO APIs worked AND we have no results
-            if (empty($all_results)) {
-                $error_message = 'No results found from any platform';
+            if (empty($final_results)) {
+                $error_message = 'No relevant results found';
                 
                 if ($api_attempts === 0) {
                     $error_message = 'No APIs are configured';
@@ -229,6 +281,11 @@ class Compare_Pricing {
                     $error_message = 'All APIs failed or returned no results';
                     if (!empty($errors)) {
                         $error_message .= '. Errors: ' . implode(', ', $errors);
+                    }
+                } elseif ($filtering_stats['total_found'] > 0) {
+                    $error_message = 'Found ' . $filtering_stats['total_found'] . ' products but none matched your product';
+                    if (empty($wc_product_title)) {
+                        $error_message .= ' (no product title available for matching)';
                     }
                 }
                 
@@ -238,16 +295,16 @@ class Compare_Pricing {
             }
 
             // Sort all results by price (lowest first)
-            usort($all_results, function($a, $b) {
+            usort($final_results, function($a, $b) {
                 return $a['price'] <=> $b['price'];
             });
 
             // Get the best deals from each platform
             $ebay_best = null;
             $amazon_best = null;
-            $overall_best = $all_results[0];
+            $overall_best = $final_results[0];
 
-            foreach ($all_results as $result) {
+            foreach ($final_results as $result) {
                 if ($result['source'] === 'ebay' && !$ebay_best) {
                     $ebay_best = $result;
                 }
@@ -264,12 +321,14 @@ class Compare_Pricing {
                 'overall_best' => $overall_best,
                 'ebay_best' => $ebay_best,
                 'amazon_best' => $amazon_best,
-                'total_results' => count($all_results),
-                'ebay_count' => count(array_filter($all_results, function($r) { return $r['source'] === 'ebay'; })),
-                'amazon_count' => count(array_filter($all_results, function($r) { return $r['source'] === 'amazon'; })),
+                'total_results' => count($final_results),
+                'ebay_count' => count(array_filter($final_results, function($r) { return $r['source'] === 'ebay'; })),
+                'amazon_count' => count(array_filter($final_results, function($r) { return $r['source'] === 'amazon'; })),
                 'errors' => $errors,
                 'successful_apis' => $successful_apis,
                 'total_apis' => $api_attempts,
+                'filtering_stats' => $filtering_stats,
+                'wc_product_title' => $wc_product_title,
                 'cached' => false
             ));
             
@@ -404,5 +463,107 @@ class Compare_Pricing {
             'sandbox_mode' => get_option('compare_pricing_sandbox_mode', 0),
             'debug_mode' => get_option('compare_pricing_debug_mode', 0)
         );
+    }
+
+    /**
+     * Extract keywords from product title for matching
+     */
+    private function extract_keywords($title) {
+        // Convert to lowercase and remove common words
+        $title = strtolower($title);
+        
+        // Remove common stop words that don't help with product matching
+        $stop_words = array(
+            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above',
+            'below', 'between', 'among', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+            'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you',
+            'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your',
+            'his', 'her', 'its', 'our', 'their', 'new', 'old', 'good', 'best', 'great',
+            'free', 'shipping', 'fast', 'quick', 'sale', 'deal', 'offer', 'price', 'cheap',
+            'discount', 'save', 'buy', 'get', 'now', 'today', 'limited', 'time', 'only'
+        );
+        
+        // Remove punctuation and split into words
+        $title = preg_replace('/[^\w\s]/', ' ', $title);
+        $words = preg_split('/\s+/', $title);
+        
+        // Filter out stop words and short words
+        $keywords = array();
+        foreach ($words as $word) {
+            $word = trim($word);
+            if (strlen($word) >= 3 && !in_array($word, $stop_words) && !is_numeric($word)) {
+                $keywords[] = $word;
+            }
+        }
+        
+        return array_unique($keywords);
+    }
+
+    /**
+     * Check if API result matches the WooCommerce product
+     */
+    private function is_relevant_product($api_title, $wc_product_title, $min_matches = null) {
+        if ($min_matches === null) {
+            $min_matches = get_option('compare_pricing_min_keyword_matches', 2);
+        }
+        
+        $wc_keywords = $this->extract_keywords($wc_product_title);
+        $api_keywords = $this->extract_keywords($api_title);
+        
+        if (empty($wc_keywords) || empty($api_keywords)) {
+            return false;
+        }
+        
+        // Count matching keywords
+        $matches = 0;
+        $matched_keywords = array();
+        
+        foreach ($wc_keywords as $wc_keyword) {
+            foreach ($api_keywords as $api_keyword) {
+                // Exact match
+                if ($wc_keyword === $api_keyword) {
+                    $matches++;
+                    $matched_keywords[] = $wc_keyword;
+                    break;
+                }
+                // Partial match (one contains the other)
+                elseif (strlen($wc_keyword) >= 4 && strlen($api_keyword) >= 4) {
+                    if (strpos($wc_keyword, $api_keyword) !== false || strpos($api_keyword, $wc_keyword) !== false) {
+                        $matches++;
+                        $matched_keywords[] = $wc_keyword . '~' . $api_keyword;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // For debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("Product matching: WC='$wc_product_title' vs API='$api_title'");
+            error_log("WC Keywords: " . implode(', ', $wc_keywords));
+            error_log("API Keywords: " . implode(', ', $api_keywords));
+            error_log("Matches: $matches (" . implode(', ', $matched_keywords) . ")");
+            error_log("Relevant: " . ($matches >= $min_matches ? 'YES' : 'NO'));
+        }
+        
+        return $matches >= $min_matches;
+    }
+
+    /**
+     * Get WooCommerce product title from product ID
+     */
+    private function get_wc_product_title($product_id) {
+        if (empty($product_id) || $product_id === 'custom') {
+            return '';
+        }
+        
+        $product = wc_get_product($product_id);
+        if (!$product) {
+            return '';
+        }
+        
+        return $product->get_name();
     }
 } 
