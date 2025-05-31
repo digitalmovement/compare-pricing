@@ -68,25 +68,9 @@ class Compare_Pricing_Admin {
         );
         
         add_settings_field(
-            'amazon_access_key',
-            'Amazon Access Key ID',
+            'amazon_api_key',
+            'Amazon API Key',
             array($this, 'amazon_access_key_callback'),
-            'compare_pricing_settings',
-            'amazon_api_section'
-        );
-        
-        add_settings_field(
-            'amazon_secret_key',
-            'Amazon Secret Access Key',
-            array($this, 'amazon_secret_key_callback'),
-            'compare_pricing_settings',
-            'amazon_api_section'
-        );
-        
-        add_settings_field(
-            'amazon_associate_tag',
-            'Amazon Associate Tag',
-            array($this, 'amazon_associate_tag_callback'),
             'compare_pricing_settings',
             'amazon_api_section'
         );
@@ -117,17 +101,15 @@ class Compare_Pricing_Admin {
     }
     
     public function admin_page() {
-        $options = get_option('compare_pricing_options', array());
         ?>
         <div class="wrap">
             <h1>Compare Pricing Settings</h1>
             
             <div class="notice notice-info">
-                <p><strong>Setup Instructions:</strong></p>
+                <p><strong>API Information:</strong></p>
                 <ul>
-                    <li><strong>eBay API:</strong> Get your credentials from <a href="https://developer.ebay.com/my/keys" target="_blank">eBay Developer Program</a></li>
-                    <li><strong>Amazon API:</strong> Get your credentials from <a href="https://webservices.amazon.com/paapi5/documentation/" target="_blank">Amazon PA-API</a>.</li>
-                    <li>Use the diagnostic tools below to test your API connections</li>
+                    <li><strong>eBay API:</strong> Uses eBay Developer Program APIs for product search</li>
+                    <li><strong>Amazon API:</strong> Uses ASIN Data API from Traject Data for reliable Amazon product data</li>
                 </ul>
             </div>
             
@@ -139,298 +121,157 @@ class Compare_Pricing_Admin {
                 ?>
             </form>
             
-            <!-- API Diagnostics Section -->
-            <div class="postbox" style="margin-top: 30px;">
-                <h2 class="hndle" style="padding: 15px;"><span>🔧 API Diagnostics</span></h2>
-                <div class="inside" style="padding: 15px;">
-                    
-                    <!-- eBay API Test -->
-                    <div class="diagnostic-section">
-                        <h3>eBay API Test</h3>
-                        <p>Test your eBay API credentials and connection:</p>
-                        <button type="button" id="test-ebay-api" class="button button-secondary">Test eBay API</button>
-                        <div id="ebay-test-results" class="test-results"></div>
+            <!-- API Testing Section -->
+            <div class="diagnostic-section">
+                <h2>🔧 API Diagnostics & Testing</h2>
+                <p>Test your API connections and GTIN lookups to ensure everything is working correctly.</p>
+                
+                <div class="api-test-section">
+                    <h3>eBay API Test</h3>
+                    <p>Test your eBay Developer API credentials and connection.</p>
+                    <button type="button" id="test-ebay-api" class="test-button">Test eBay API</button>
+                    <div id="ebay-test-results" class="test-results"></div>
+                </div>
+                
+                <div class="api-test-section">
+                    <h3>Amazon API Test</h3>
+                    <p>Test your ASIN Data API connection and credentials.</p>
+                    <button type="button" id="test-amazon-api" class="test-button">Test Amazon API</button>
+                    <div id="amazon-test-results" class="test-results"></div>
+                </div>
+                
+                <div class="api-test-section">
+                    <h3>GTIN Lookup Test</h3>
+                    <p>Test price comparison for a specific GTIN/UPC/EAN code.</p>
+                    <div class="gtin-test-controls">
+                        <input type="text" id="test-gtin" placeholder="Enter GTIN/UPC/EAN" class="regular-text" />
+                        <button type="button" id="test-gtin-lookup" class="test-button">Test GTIN Lookup</button>
                     </div>
-                    
-                    <hr style="margin: 30px 0;">
-                    
-                    <!-- Amazon API Test -->
-                    <div class="diagnostic-section">
-                        <h3>Amazon API Test</h3>
-                        <p>Test your Amazon API credentials and connection:</p>
-                        <button type="button" id="test-amazon-api" class="button button-secondary">Test Amazon API</button>
-                        <div id="amazon-test-results" class="test-results"></div>
+                    <div class="gtin-examples">
+                        <p><strong>Example GTINs to test:</strong></p>
+                        <ul>
+                            <li><code>3386460065947</code> - Perfume/Fragrance product</li>
+                            <li><code>0885909950805</code> - Electronics product</li>
+                            <li><code>0194252014233</code> - Beauty product</li>
+                            <li><code>0123456789012</code> - Generic test GTIN</li>
+                        </ul>
+                        <p><em>Note: Results depend on product availability on eBay and Amazon.</em></p>
                     </div>
-                    
-                    <hr style="margin: 30px 0;">
-                    
-                    <!-- GTIN Lookup Test -->
-                    <div class="diagnostic-section">
-                        <h3>GTIN Lookup Test</h3>
-                        <p>Test price comparison with a specific GTIN:</p>
-                        <div style="margin-bottom: 15px;">
-                            <label for="test-gtin"><strong>Enter GTIN:</strong></label><br>
-                            <input type="text" id="test-gtin" class="regular-text" placeholder="e.g., 194252707050" value="194252707050">
-                            <p class="description">Default GTIN is for iPhone 13 (should return results)</p>
+                    <div id="gtin-test-results" class="test-results"></div>
+                </div>
+                
+                <div class="api-info-section">
+                    <h3>📋 API Information</h3>
+                    <div class="api-info-grid">
+                        <div class="api-info-card">
+                            <h4>eBay Developer API</h4>
+                            <p><strong>Purpose:</strong> Search eBay marketplace for products</p>
+                            <p><strong>Required:</strong> App ID, Dev ID, Cert ID</p>
+                            <p><strong>Get credentials:</strong> <a href="https://developer.ebay.com/" target="_blank">eBay Developer Program</a></p>
+                            <p><strong>Documentation:</strong> <a href="https://developer.ebay.com/api-docs/buy/browse/overview.html" target="_blank">Browse API Docs</a></p>
                         </div>
-                        <button type="button" id="test-gtin-lookup" class="button button-primary">Test GTIN Lookup</button>
-                        <div id="gtin-test-results" class="test-results"></div>
+                        
+                        <div class="api-info-card">
+                            <h4>ASIN Data API (Traject Data)</h4>
+                            <p><strong>Purpose:</strong> Search Amazon marketplace for products</p>
+                            <p><strong>Required:</strong> API Key only</p>
+                            <p><strong>Get API key:</strong> <a href="https://app.asindataapi.com/signup" target="_blank">Sign up at asindataapi.com</a></p>
+                            <p><strong>Documentation:</strong> <a href="https://docs.trajectdata.com/asindataapi/product-data-api/overview" target="_blank">API Documentation</a></p>
+                            <p><strong>Pricing:</strong> Pay-per-request model with free tier available</p>
+                        </div>
                     </div>
-                    
                 </div>
             </div>
             
-            <!-- Usage Instructions -->
-            <div class="postbox" style="margin-top: 20px;">
-                <h2 class="hndle" style="padding: 15px;"><span>📖 Usage Instructions</span></h2>
-                <div class="inside" style="padding: 15px;">
-                    <h3>Shortcode Usage</h3>
-                    <p>Use the <code>[compare_pricing]</code> shortcode in your product pages:</p>
-                    <ul>
-                        <li><code>[compare_pricing]</code> - Automatic detection on product pages</li>
-                        <li><code>[compare_pricing product_id="123"]</code> - Specific product ID</li>
-                        <li><code>[compare_pricing gtin="1234567890123"]</code> - Direct GTIN</li>
-                    </ul>
+            <div class="usage-section">
+                <h2>📖 Usage Instructions</h2>
+                <div class="usage-grid">
+                    <div class="usage-card">
+                        <h3>Shortcode Usage</h3>
+                        <p>Add price comparison to any page or post:</p>
+                        <code>[compare_pricing]</code>
+                        <p>With custom GTIN:</p>
+                        <code>[compare_pricing gtin="1234567890123"]</code>
+                        <p>With title:</p>
+                        <code>[compare_pricing title="Compare Prices" show_title="true"]</code>
+                    </div>
                     
-                    <h3>GTIN Field Setup</h3>
-                    <p>The plugin looks for GTIN in these WooCommerce product fields (in order):</p>
-                    <ol>
-                        <li><code>_global_unique_id</code> - WooCommerce default GTIN field</li>
-                        <li><code>_wc_gla_gtin</code> - WooCommerce Google Listings & Ads</li>
-                        <li><code>_gtin</code> - Custom field fallback</li>
-                    </ol>
+                    <div class="usage-card">
+                        <h3>Product Integration</h3>
+                        <p>The plugin automatically detects GTINs from WooCommerce products using these fields (in order of priority):</p>
+                        <ol>
+                            <li><code>_global_unique_id</code> - WooCommerce default GTIN field</li>
+                            <li><code>_wc_gla_gtin</code> - WooCommerce Google Listings & Ads</li>
+                            <li><code>_gtin</code> - Custom GTIN field</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="usage-card">
+                        <h3>Template Integration</h3>
+                        <p>Add to your theme templates:</p>
+                        <code>&lt;?php echo do_shortcode('[compare_pricing]'); ?&gt;</code>
+                        <p>Or use the function directly:</p>
+                        <code>&lt;?php 
+if (function_exists('compare_pricing_display')) {
+    compare_pricing_display($gtin);
+}
+?&gt;</code>
+                    </div>
                 </div>
             </div>
         </div>
         
         <style>
-        .test-results {
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 4px;
-            display: none;
+        .api-test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
         }
-        .test-results.loading {
-            display: block;
-            background: #f0f8ff;
-            border: 1px solid #0073aa;
+        
+        .api-info-grid, .usage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .api-info-card, .usage-card {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+        }
+        
+        .api-info-card h4, .usage-card h3 {
+            margin-top: 0;
             color: #0073aa;
         }
-        .test-results.success {
-            display: block;
-            background: #f0fff4;
-            border: 1px solid #00a32a;
-            color: #00a32a;
+        
+        .gtin-test-controls {
+            margin-bottom: 15px;
         }
-        .test-results.error {
-            display: block;
-            background: #fef7f7;
-            border: 1px solid #d63638;
-            color: #d63638;
-        }
-        .test-step {
-            margin: 10px 0;
-            padding: 8px;
+        
+        .gtin-examples {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f0f8ff;
+            border-left: 4px solid #0073aa;
             border-radius: 3px;
         }
-        .test-step.success {
-            background: #f0fff4;
-            border-left: 4px solid #00a32a;
-        }
-        .test-step.error {
-            background: #fef7f7;
-            border-left: 4px solid #d63638;
-        }
-        .test-step.warning {
-            background: #fffbf0;
-            border-left: 4px solid #dba617;
-        }
-        .diagnostic-section {
-            margin-bottom: 20px;
-        }
-        .gtin-results {
-            margin-top: 15px;
-        }
-        .platform-result {
+        
+        .gtin-examples ul {
             margin: 10px 0;
-            padding: 10px;
-            border-radius: 4px;
-            border-left: 4px solid #ccc;
         }
-        .platform-result.ebay {
-            border-left-color: #e53238;
-            background: #fef9e7;
-        }
-        .platform-result.amazon {
-            border-left-color: #ff9900;
-            background: #f0f8ff;
+        
+        .gtin-examples code {
+            background: #e1ecf4;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
         }
         </style>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            // eBay API Test
-            $('#test-ebay-api').click(function() {
-                var $results = $('#ebay-test-results');
-                $results.removeClass('success error').addClass('loading').show();
-                $results.html('🔄 Testing eBay API connection...');
-                
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'test_ebay_api',
-                        nonce: '<?php echo wp_create_nonce('test_api_nonce'); ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            $results.removeClass('loading error').addClass('success');
-                            $results.html('✅ eBay API test completed successfully!<br>' + formatTestResults(response.data));
-                        } else {
-                            $results.removeClass('loading success').addClass('error');
-                            $results.html('❌ eBay API test failed: ' + response.data);
-                        }
-                    },
-                    error: function() {
-                        $results.removeClass('loading success').addClass('error');
-                        $results.html('❌ AJAX request failed');
-                    }
-                });
-            });
-            
-            // Amazon API Test
-            $('#test-amazon-api').click(function() {
-                var $results = $('#amazon-test-results');
-                $results.removeClass('success error').addClass('loading').show();
-                $results.html('🔄 Testing Amazon API connection...');
-                
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'test_amazon_api',
-                        nonce: '<?php echo wp_create_nonce('test_api_nonce'); ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            $results.removeClass('loading error').addClass('success');
-                            $results.html('✅ Amazon API test completed successfully!<br>' + formatTestResults(response.data));
-                        } else {
-                            $results.removeClass('loading success').addClass('error');
-                            $results.html('❌ Amazon API test failed: ' + response.data);
-                        }
-                    },
-                    error: function() {
-                        $results.removeClass('loading success').addClass('error');
-                        $results.html('❌ AJAX request failed');
-                    }
-                });
-            });
-            
-            // GTIN Lookup Test
-            $('#test-gtin-lookup').click(function() {
-                var gtin = $('#test-gtin').val().trim();
-                var $results = $('#gtin-test-results');
-                
-                if (!gtin) {
-                    alert('Please enter a GTIN to test');
-                    return;
-                }
-                
-                $results.removeClass('success error').addClass('loading').show();
-                $results.html('🔄 Testing GTIN lookup for: ' + gtin);
-                
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'test_gtin_lookup',
-                        gtin: gtin,
-                        nonce: '<?php echo wp_create_nonce('test_api_nonce'); ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            $results.removeClass('loading error').addClass('success');
-                            $results.html(formatGtinResults(response.data));
-                        } else {
-                            $results.removeClass('loading success').addClass('error');
-                            $results.html('❌ GTIN lookup failed: ' + response.data);
-                        }
-                    },
-                    error: function() {
-                        $results.removeClass('loading success').addClass('error');
-                        $results.html('❌ AJAX request failed');
-                    }
-                });
-            });
-            
-            function formatTestResults(data) {
-                if (typeof data === 'string') return data;
-                
-                var html = '<div class="test-details">';
-                if (data.debug) {
-                    for (var step in data.debug) {
-                        var stepData = data.debug[step];
-                        var statusClass = stepData.status === 'success' ? 'success' : 
-                                        stepData.status === 'error' ? 'error' : 'warning';
-                        
-                        html += '<div class="test-step ' + statusClass + '">';
-                        html += '<strong>' + stepData.title + ':</strong> ' + stepData.message;
-                        if (stepData.details) {
-                            html += '<br><small>' + JSON.stringify(stepData.details) + '</small>';
-                        }
-                        html += '</div>';
-                    }
-                }
-                html += '</div>';
-                return html;
-            }
-            
-            function formatGtinResults(data) {
-                var html = '<div class="gtin-results">';
-                html += '<h4>🔍 GTIN Lookup Results</h4>';
-                
-                if (data.overall_best) {
-                    html += '<div style="background: #f0fff4; padding: 10px; border-radius: 4px; margin: 10px 0;">';
-                    html += '<strong>🏆 Best Deal Found:</strong><br>';
-                    html += 'Platform: ' + data.overall_best.source.toUpperCase() + '<br>';
-                    html += 'Price: $' + parseFloat(data.overall_best.price).toFixed(2) + '<br>';
-                    html += 'Title: ' + data.overall_best.title + '<br>';
-                    html += '<a href="' + data.overall_best.url + '" target="_blank">View Product</a>';
-                    html += '</div>';
-                }
-                
-                if (data.ebay_best) {
-                    html += '<div class="platform-result ebay">';
-                    html += '<strong>eBay Best Deal:</strong><br>';
-                    html += 'Price: $' + parseFloat(data.ebay_best.price).toFixed(2) + '<br>';
-                    html += 'Title: ' + data.ebay_best.title + '<br>';
-                    html += '<a href="' + data.ebay_best.url + '" target="_blank">View on eBay</a>';
-                    html += '</div>';
-                }
-                
-                if (data.amazon_best) {
-                    html += '<div class="platform-result amazon">';
-                    html += '<strong>Amazon Best Deal:</strong><br>';
-                    html += 'Price: $' + parseFloat(data.amazon_best.price).toFixed(2) + '<br>';
-                    html += 'Title: ' + data.amazon_best.title + '<br>';
-                    html += '<a href="' + data.amazon_best.url + '" target="_blank">View on Amazon</a>';
-                    html += '</div>';
-                }
-                
-                html += '<div style="margin-top: 15px; font-size: 12px; color: #666;">';
-                html += 'Total Results: ' + data.total_results + ' ';
-                html += '(eBay: ' + data.ebay_count + ', Amazon: ' + data.amazon_count + ')';
-                if (data.errors && Object.keys(data.errors).length > 0) {
-                    html += '<br>Errors: ' + JSON.stringify(data.errors);
-                }
-                html += '</div>';
-                
-                html += '</div>';
-                return html;
-            }
-        });
-        </script>
         <?php
     }
     
@@ -440,7 +281,9 @@ class Compare_Pricing_Admin {
     }
     
     public function amazon_section_callback() {
-        echo '<p>Configure your Amazon Product Advertising API credentials. Get these from <a href="https://webservices.amazon.com/paapi5/documentation/" target="_blank">Amazon PA-API</a>.</p>';
+        echo '<p>Configure your Amazon product data API settings. We use the ASIN Data API from Traject Data for reliable Amazon product information.</p>';
+        echo '<p><strong>Get your API key:</strong> <a href="https://app.asindataapi.com/signup" target="_blank">Sign up at asindataapi.com</a></p>';
+        echo '<p><strong>Documentation:</strong> <a href="https://docs.trajectdata.com/asindataapi/product-data-api/overview" target="_blank">API Documentation</a></p>';
     }
     
     public function general_section_callback() {
@@ -470,24 +313,20 @@ class Compare_Pricing_Admin {
     }
     
     public function amazon_access_key_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['amazon_access_key']) ? $options['amazon_access_key'] : '';
-        echo '<input type="text" name="compare_pricing_options[amazon_access_key]" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Your Amazon Access Key ID</p>';
+        $options = get_option('compare_pricing_options');
+        $value = isset($options['amazon_api_key']) ? $options['amazon_api_key'] : '';
+        echo '<input type="text" id="amazon_api_key" name="compare_pricing_options[amazon_api_key]" value="' . esc_attr($value) . '" class="regular-text" />';
+        echo '<p class="description">Your ASIN Data API key from <a href="https://app.asindataapi.com/" target="_blank">asindataapi.com</a></p>';
     }
     
     public function amazon_secret_key_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['amazon_secret_key']) ? $options['amazon_secret_key'] : '';
-        echo '<input type="password" name="compare_pricing_options[amazon_secret_key]" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Your Amazon Secret Access Key</p>';
+        // Remove this field since we're not using AWS PA-API anymore
+        echo '<p class="description"><em>Not required for ASIN Data API</em></p>';
     }
     
     public function amazon_associate_tag_callback() {
-        $options = get_option('compare_pricing_options', array());
-        $value = isset($options['amazon_associate_tag']) ? $options['amazon_associate_tag'] : '';
-        echo '<input type="text" name="compare_pricing_options[amazon_associate_tag]" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Your Amazon Associate Tag (for affiliate links)</p>';
+        // Remove this field since we're not using AWS PA-API anymore  
+        echo '<p class="description"><em>Not required for ASIN Data API</em></p>';
     }
     
     public function cache_duration_callback() {
@@ -534,8 +373,13 @@ class Compare_Pricing_Admin {
         }
         
         require_once COMPARE_PRICING_PATH . 'includes/class-amazon-api.php';
-        $amazon_api = new Compare_Pricing_Amazon_API();
         
+        $options = array(
+            'amazon_api_key' => get_option('compare_pricing_amazon_api_key', ''),
+            'debug_mode' => get_option('compare_pricing_debug_mode', 0)
+        );
+        
+        $amazon_api = new Compare_Pricing_Amazon_API($options);
         $result = $amazon_api->test_connection();
         
         if ($result['success']) {
@@ -560,14 +404,24 @@ class Compare_Pricing_Admin {
             return;
         }
         
-        // Use the main compare pricing class to test GTIN lookup
-        require_once COMPARE_PRICING_PATH . 'includes/class-compare-pricing.php';
+        // Load API classes
         require_once COMPARE_PRICING_PATH . 'includes/class-ebay-api.php';
         require_once COMPARE_PRICING_PATH . 'includes/class-amazon-api.php';
         
-        $compare_pricing = new Compare_Pricing();
-        $ebay_api = new Compare_Pricing_eBay_API();
-        $amazon_api = new Compare_Pricing_Amazon_API();
+        $ebay_options = array(
+            'ebay_app_id' => get_option('compare_pricing_ebay_app_id', ''),
+            'ebay_cert_id' => get_option('compare_pricing_ebay_cert_id', ''),
+            'ebay_dev_id' => get_option('compare_pricing_ebay_dev_id', ''),
+            'sandbox_mode' => get_option('compare_pricing_sandbox_mode', 0)
+        );
+        
+        $amazon_options = array(
+            'amazon_api_key' => get_option('compare_pricing_amazon_api_key', ''),
+            'debug_mode' => get_option('compare_pricing_debug_mode', 0)
+        );
+        
+        $ebay_api = new Compare_Pricing_eBay_API($ebay_options);
+        $amazon_api = new Compare_Pricing_Amazon_API($amazon_options);
         
         $all_results = array();
         $errors = array();
@@ -581,11 +435,11 @@ class Compare_Pricing_Admin {
         }
         
         // Test Amazon
-        $amazon_results = $amazon_api->search_products($gtin, 5);
-        if (is_wp_error($amazon_results)) {
-            $errors['amazon'] = $amazon_results->get_error_message();
-        } elseif (!empty($amazon_results)) {
-            $all_results = array_merge($all_results, $amazon_results);
+        $amazon_result = $amazon_api->search_products($gtin, 5);
+        if ($amazon_result['success'] && !empty($amazon_result['products'])) {
+            $all_results = array_merge($all_results, $amazon_result['products']);
+        } elseif (!$amazon_result['success']) {
+            $errors['amazon'] = $amazon_result['error'];
         }
         
         if (empty($all_results)) {

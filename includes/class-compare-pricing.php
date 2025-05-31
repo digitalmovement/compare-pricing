@@ -6,14 +6,21 @@ class Compare_Pricing {
     private $amazon_api;
     
     public function __construct() {
+        // Initialize API classes
         $this->ebay_api = new Compare_Pricing_eBay_API();
-        $this->amazon_api = new Compare_Pricing_Amazon_API();
         
-        add_action('init', array($this, 'init'));
+        // Initialize Amazon API with options
+        $amazon_options = array(
+            'amazon_api_key' => get_option('compare_pricing_amazon_api_key', ''),
+            'debug_mode' => get_option('compare_pricing_debug_mode', 0)
+        );
+        $this->amazon_api = new Compare_Pricing_Amazon_API($amazon_options);
+        
+        // Hook into WordPress
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
-        add_shortcode('compare_pricing', array($this, 'shortcode_handler'));
         add_action('wp_ajax_compare_pricing', array($this, 'handle_ajax_compare'));
         add_action('wp_ajax_nopriv_compare_pricing', array($this, 'handle_ajax_compare'));
+        add_shortcode('compare_pricing', array($this, 'shortcode_handler'));
     }
     
     public function init() {
@@ -187,14 +194,14 @@ class Compare_Pricing {
 
             // Get Amazon results using GTIN
             error_log('Compare Pricing: Calling Amazon API with GTIN: ' . $gtin);
-            $amazon_results = $this->amazon_api->search_products($gtin, 5);
-            
-            if (is_wp_error($amazon_results)) {
-                error_log('Compare Pricing: Amazon API Error - ' . $amazon_results->get_error_message());
-                $errors['amazon'] = $amazon_results->get_error_message();
-            } elseif (!empty($amazon_results)) {
-                $all_results = array_merge($all_results, $amazon_results);
-                error_log('Compare Pricing: Found ' . count($amazon_results) . ' Amazon results');
+            $amazon_result = $this->amazon_api->search_products($gtin, 5);
+
+            if ($amazon_result['success'] && !empty($amazon_result['products'])) {
+                $all_results = array_merge($all_results, $amazon_result['products']);
+                error_log('Compare Pricing: Found ' . count($amazon_result['products']) . ' Amazon results');
+            } elseif (!$amazon_result['success']) {
+                error_log('Compare Pricing: Amazon API Error - ' . $amazon_result['error']);
+                $errors['amazon'] = $amazon_result['error'];
             }
 
             // If no results from either platform
