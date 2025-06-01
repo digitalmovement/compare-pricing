@@ -223,7 +223,7 @@ class Compare_Pricing_Amazon_API {
             );
             $results_processed++;
             
-            $this->log_debug('Added product: ' . $item['title'] . ' - ' . strip_currency_symbols($item['price']['raw']));
+            $this->log_debug('Added product: ' . $item['title'] . ' - ' . $this->strip_currency_symbols($item['price']['raw']));
         }
         
         $debug_info['results'] = array(
