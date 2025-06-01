@@ -352,16 +352,16 @@ class Compare_Pricing_eBay_API {
      */
     private function get_marketplace_info($country_code) {
         $marketplaces = array(
-            'US' => array('marketplace_id' => 'EBAY_US', 'name' => 'eBay.com', 'currency' => 'USD'),
-            'GB' => array('marketplace_id' => 'EBAY_GB', 'name' => 'eBay.co.uk', 'currency' => 'GBP'),
-            'DE' => array('marketplace_id' => 'EBAY_DE', 'name' => 'eBay.de', 'currency' => 'EUR'),
-            'FR' => array('marketplace_id' => 'EBAY_FR', 'name' => 'eBay.fr', 'currency' => 'EUR'),
-            'IT' => array('marketplace_id' => 'EBAY_IT', 'name' => 'eBay.it', 'currency' => 'EUR'),
-            'ES' => array('marketplace_id' => 'EBAY_ES', 'name' => 'eBay.es', 'currency' => 'EUR'),
-            'CA' => array('marketplace_id' => 'EBAY_CA', 'name' => 'eBay.ca', 'currency' => 'CAD'),
-            'AU' => array('marketplace_id' => 'EBAY_AU', 'name' => 'eBay.com.au', 'currency' => 'AUD'),
+            'US' => array('marketplace_id' => 'EBAY_US', 'name' => 'eBay.com', 'currency' => 'USD', 'symbol' => '&#36;'),        // $
+            'GB' => array('marketplace_id' => 'EBAY_GB', 'name' => 'eBay.co.uk', 'currency' => 'GBP', 'symbol' => '&#163;'),    // £
+            'DE' => array('marketplace_id' => 'EBAY_DE', 'name' => 'eBay.de', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'FR' => array('marketplace_id' => 'EBAY_FR', 'name' => 'eBay.fr', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'IT' => array('marketplace_id' => 'EBAY_IT', 'name' => 'eBay.it', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'ES' => array('marketplace_id' => 'EBAY_ES', 'name' => 'eBay.es', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'CA' => array('marketplace_id' => 'EBAY_CA', 'name' => 'eBay.ca', 'currency' => 'CAD', 'symbol' => '&#36;'),        // $
+            'AU' => array('marketplace_id' => 'EBAY_AU', 'name' => 'eBay.com.au', 'currency' => 'AUD', 'symbol' => '&#36;'),   // $
         );
-        
+    
         return isset($marketplaces[$country_code]) ? $marketplaces[$country_code] : $marketplaces['US'];
     }
 } 

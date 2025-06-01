@@ -223,7 +223,7 @@ class Compare_Pricing_Amazon_API {
             );
             $results_processed++;
             
-            $this->log_debug('Added product: ' . $item['title'] . ' - $' . $item['price']['raw']);
+            $this->log_debug('Added product: ' . $item['title'] . ' - ' . $item['price']['raw']);
         }
         
         $debug_info['results'] = array(
@@ -423,22 +423,94 @@ class Compare_Pricing_Amazon_API {
      */
     private function get_marketplace_info($country_code) {
         $marketplaces = array(
-            'US' => array('domain' => 'amazon.com', 'name' => 'Amazon.com', 'currency' => 'USD'),
-            'GB' => array('domain' => 'amazon.co.uk', 'name' => 'Amazon.co.uk', 'currency' => 'GBP'),
-            'DE' => array('domain' => 'amazon.de', 'name' => 'Amazon.de', 'currency' => 'EUR'),
-            'FR' => array('domain' => 'amazon.fr', 'name' => 'Amazon.fr', 'currency' => 'EUR'),
-            'IT' => array('domain' => 'amazon.it', 'name' => 'Amazon.it', 'currency' => 'EUR'),
-            'ES' => array('domain' => 'amazon.es', 'name' => 'Amazon.es', 'currency' => 'EUR'),
-            'CA' => array('domain' => 'amazon.ca', 'name' => 'Amazon.ca', 'currency' => 'CAD'),
-            'AU' => array('domain' => 'amazon.com.au', 'name' => 'Amazon.com.au', 'currency' => 'AUD'),
-            'JP' => array('domain' => 'amazon.co.jp', 'name' => 'Amazon.co.jp', 'currency' => 'JPY'),
-            'IN' => array('domain' => 'amazon.in', 'name' => 'Amazon.in', 'currency' => 'INR'),
+            'US' => array('domain' => 'amazon.com', 'name' => 'Amazon.com', 'currency' => 'USD', 'symbol' => '&#36;'),     // $
+            'GB' => array('domain' => 'amazon.co.uk', 'name' => 'Amazon.co.uk', 'currency' => 'GBP', 'symbol' => '&#163;'), // £
+            'DE' => array('domain' => 'amazon.de', 'name' => 'Amazon.de', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'FR' => array('domain' => 'amazon.fr', 'name' => 'Amazon.fr', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'IT' => array('domain' => 'amazon.it', 'name' => 'Amazon.it', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'ES' => array('domain' => 'amazon.es', 'name' => 'Amazon.es', 'currency' => 'EUR', 'symbol' => '&#8364;'),      // €
+            'CA' => array('domain' => 'amazon.ca', 'name' => 'Amazon.ca', 'currency' => 'CAD', 'symbol' => '&#36;'),        // $
+            'AU' => array('domain' => 'amazon.com.au', 'name' => 'Amazon.com.au', 'currency' => 'AUD', 'symbol' => '&#36;'), // $
+            'JP' => array('domain' => 'amazon.co.jp', 'name' => 'Amazon.co.jp', 'currency' => 'JPY', 'symbol' => '&#165;'), // ¥
+            'IN' => array('domain' => 'amazon.in', 'name' => 'Amazon.in', 'currency' => 'INR', 'symbol' => '&#8377;'),       // ₹
         );
         
         return isset($marketplaces[$country_code]) ? $marketplaces[$country_code] : $marketplaces['US'];
     }
 
-    private function strip_currency_symbols($input) {
-        return preg_replace('/[\p{Sc}]/u', '', $input);
+    private function strip_currency_symbols($price) {
+        if (empty($price)) {
+            return '';
+        }
+        
+        // Convert to string if not already
+        $price = (string) $price;
+        
+        // Array of currency symbols to remove (both regular and HTML entities)
+        $currency_symbols = array(
+            '$',        // Dollar
+            '£',        // Pound
+            '€',        // Euro
+            '¥',        // Yen
+            '₹',        // Indian Rupee
+            '₽',        // Russian Ruble
+            '₩',        // Korean Won
+            '₪',        // Israeli Shekel
+            '₫',        // Vietnamese Dong
+            '₡',        // Costa Rican Colon
+            '₦',        // Nigerian Naira
+            '₨',        // Pakistani Rupee
+            '₱',        // Philippine Peso
+            '₳',        // Austral
+            '₴',        // Ukrainian Hryvnia
+            '₵',        // Ghanaian Cedi
+            '₶',        // Livre Tournois
+            '₷',        // Spesmilo
+            '₸',        // Kazakhstani Tenge
+            '₹',        // Indian Rupee (duplicate for safety)
+            '₺',        // Turkish Lira
+            '₻',        // Nordic Mark
+            '₼',        // Azerbaijani Manat
+            '₽',        // Russian Ruble (duplicate for safety)
+            '₾',        // Georgian Lari
+            '₿',        // Bitcoin
+            '＄',       // Fullwidth Dollar Sign
+            '￠',       // Fullwidth Cent Sign
+            '￡',       // Fullwidth Pound Sign
+            '￢',       // Fullwidth Not Sign
+            '￣',       // Fullwidth Macron
+            '￤',       // Fullwidth Broken Bar
+            '￥',       // Fullwidth Yen Sign
+            '￦',       // Fullwidth Won Sign
+            // HTML entities
+            '&#36;',    // $
+            '&#163;',   // £
+            '&#8364;',  // €
+            '&#165;',   // ¥
+            '&#8377;',  // ₹
+            '&dollar;', // $
+            '&pound;',  // £
+            '&euro;',   // €
+            '&yen;',    // ¥
+            // Common currency words/abbreviations
+            'USD', 'GBP', 'EUR', 'JPY', 'CAD', 'AUD', 'INR', 'CNY', 'CHF', 'SEK', 
+            'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'RUB', 'BRL', 'MXN', 'ZAR', 'KRW',
+            'usd', 'gbp', 'eur', 'jpy', 'cad', 'aud', 'inr', 'cny', 'chf', 'sek',
+            'nok', 'dkk', 'pln', 'czk', 'huf', 'rub', 'brl', 'mxn', 'zar', 'krw'
+        );
+        
+        // Remove all currency symbols
+        $cleaned_price = str_replace($currency_symbols, '', $price);
+        
+        // Decode HTML entities that might remain
+        $cleaned_price = html_entity_decode($cleaned_price, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        
+        // Remove any remaining non-numeric characters except decimal points, commas, and minus signs
+        $cleaned_price = preg_replace('/[^\d.,\-]/', '', $cleaned_price);
+        
+        // Trim whitespace
+        $cleaned_price = trim($cleaned_price);
+        
+        return $cleaned_price;
     }
 } 
