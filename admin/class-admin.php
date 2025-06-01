@@ -616,8 +616,8 @@ if (function_exists('compare_pricing_display')) {
     }
     
     public function enqueue_admin_scripts($hook) {
-        // Only load on our settings page
-        if ($hook !== 'settings_page_compare-pricing') {
+        // Only load on our settings page - check for both main page and subpages
+        if (strpos($hook, 'compare-pricing') === false) {
             return;
         }
         
