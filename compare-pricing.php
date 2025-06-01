@@ -3,7 +3,7 @@
  * Plugin Name: Compare Pricing
  * Plugin URI: https://yourwebsite.com
  * Description: Compare prices from eBay and Amazon for WooCommerce products
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Your Name
  * License: GPL v2 or later
  * Text Domain: compare-pricing
