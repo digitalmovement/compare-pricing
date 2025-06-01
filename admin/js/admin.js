@@ -106,6 +106,32 @@ jQuery(document).ready(function($) {
         });
     });
     
+    // Test Location API
+    $('#test-location-api').on('click', function(e) {
+        e.preventDefault();
+        
+        var $button = $(this);
+        var $results = $('#location-test-results');
+        
+        $button.prop('disabled', true).text(comparePricingAdmin.strings.testing);
+        $results.html('<div class="testing">Testing location detection service...</div>');
+        
+        $.post(comparePricingAdmin.ajax_url, {
+            action: 'test_location_api',
+            nonce: comparePricingAdmin.nonce
+        }, function(response) {
+            if (response.success && response.data.debug) {
+                displayTestResults($results, response.data.debug);
+            } else {
+                $results.html('<div class="test-results error"><h4>❌ Test Failed</h4><p>' + (response.data || 'Unknown error') + '</p></div>');
+            }
+        }).fail(function() {
+            $results.html('<div class="test-results error"><h4>❌ Request Failed</h4><p>Could not connect to test the location API</p></div>');
+        }).always(function() {
+            $button.prop('disabled', false).text('Test Location API');
+        });
+    });
+    
     // Display test results
     function displayTestResults($container, debugInfo, success) {
         var html = '<div class="test-results ' + (success ? 'success' : 'error') + '">';

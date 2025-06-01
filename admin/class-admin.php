@@ -14,6 +14,7 @@ class Compare_Pricing_Admin {
         add_action('wp_ajax_test_ebay_api', array($this, 'ajax_test_ebay_api'));
         add_action('wp_ajax_test_amazon_api', array($this, 'ajax_test_amazon_api'));
         add_action('wp_ajax_test_gtin_lookup', array($this, 'ajax_test_gtin_lookup'));
+        add_action('wp_ajax_test_location_api', array($this, 'ajax_test_location_api'));
     }
     
     public function add_admin_menu() {
@@ -886,5 +887,141 @@ if (function_exists('compare_pricing_display')) {
         // This will be handled by the existing test_gtin_lookup method
         $_POST['gtin'] = $gtin;
         $this->ajax_test_gtin_lookup();
+    }
+
+    public function ajax_test_location_api() {
+        check_ajax_referer('test_api_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        $debug_info = array();
+        
+        // Test freeipapi.com
+        $debug_info['api_test'] = array(
+            'status' => 'checking',
+            'title' => 'Location API Test',
+            'message' => 'Testing freeipapi.com service...'
+        );
+        
+        $response = wp_remote_get('https://freeipapi.com/api/json', array(
+            'timeout' => 10,
+            'headers' => array(
+                'User-Agent' => 'WordPress Compare Pricing Plugin Test'
+            )
+        ));
+        
+        if (is_wp_error($response)) {
+            $debug_info['api_test'] = array(
+                'status' => 'error',
+                'title' => 'Location API Test',
+                'message' => 'Failed to connect to freeipapi.com: ' . $response->get_error_message(),
+                'help' => 'Check your server\'s internet connection and firewall settings'
+            );
+            
+            wp_send_json_success(array(
+                'success' => false,
+                'debug' => $debug_info
+            ));
+            return;
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $debug_info['api_test'] = array(
+                'status' => 'error',
+                'title' => 'Location API Test',
+                'message' => 'Invalid JSON response from freeipapi.com',
+                'details' => array(
+                    'JSON Error' => json_last_error_msg(),
+                    'Raw Response' => substr($body, 0, 200) . '...'
+                )
+            );
+            
+            wp_send_json_success(array(
+                'success' => false,
+                'debug' => $debug_info
+            ));
+            return;
+        }
+        
+        // Check if we got the expected data
+        if (!isset($data['countryCode']) || !isset($data['countryName'])) {
+            $debug_info['api_test'] = array(
+                'status' => 'warning',
+                'title' => 'Location API Test',
+                'message' => 'Unexpected response format from freeipapi.com',
+                'details' => array(
+                    'Expected Fields' => 'countryCode, countryName',
+                    'Received Fields' => implode(', ', array_keys($data)),
+                    'Sample Data' => $data
+                )
+            );
+            
+            wp_send_json_success(array(
+                'success' => false,
+                'debug' => $debug_info
+            ));
+            return;
+        }
+        
+        // Success!
+        $debug_info['api_test'] = array(
+            'status' => 'success',
+            'title' => 'Location API Test',
+            'message' => 'Successfully detected location: ' . $data['countryName'] . ' (' . $data['countryCode'] . ')',
+            'details' => array(
+                'Country Code' => $data['countryCode'],
+                'Country Name' => $data['countryName'],
+                'IP Address' => isset($data['ipAddress']) ? $data['ipAddress'] : 'Not provided',
+                'City' => isset($data['cityName']) ? $data['cityName'] : 'Not provided',
+                'Region' => isset($data['regionName']) ? $data['regionName'] : 'Not provided'
+            ),
+            'note' => 'Location detection is working correctly'
+        );
+        
+        // Test marketplace mapping
+        $marketplace_test = $this->test_marketplace_mapping($data['countryCode']);
+        $debug_info['marketplace_test'] = $marketplace_test;
+        
+        wp_send_json_success(array(
+            'success' => true,
+            'debug' => $debug_info
+        ));
+    }
+
+    private function test_marketplace_mapping($country_code) {
+        $supported_countries = array(
+            'US' => 'United States (eBay.com, Amazon.com)',
+            'GB' => 'United Kingdom (eBay.co.uk, Amazon.co.uk)',
+            'DE' => 'Germany (eBay.de, Amazon.de)',
+            'FR' => 'France (eBay.fr, Amazon.fr)',
+            'IT' => 'Italy (eBay.it, Amazon.it)',
+            'ES' => 'Spain (eBay.es, Amazon.es)',
+            'CA' => 'Canada (eBay.ca, Amazon.ca)',
+            'AU' => 'Australia (eBay.com.au, Amazon.com.au)',
+            'JP' => 'Japan (Amazon.co.jp)',
+            'IN' => 'India (Amazon.in)'
+        );
+        
+        if (isset($supported_countries[$country_code])) {
+            return array(
+                'status' => 'success',
+                'title' => 'Marketplace Mapping',
+                'message' => 'Country is supported: ' . $supported_countries[$country_code],
+                'note' => 'Users from this location will see localized pricing'
+            );
+        } else {
+            return array(
+                'status' => 'warning',
+                'title' => 'Marketplace Mapping',
+                'message' => 'Country not specifically supported, will default to US marketplaces',
+                'help' => 'Consider adding support for this country if you have many users from this location'
+            );
+        }
     }
 } 

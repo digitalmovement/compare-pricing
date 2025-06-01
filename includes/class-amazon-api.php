@@ -10,8 +10,8 @@ class Compare_Pricing_Amazon_API {
         $this->debug = isset($options['debug_mode']) ? $options['debug_mode'] : false;
     }
     
-    public function search_products($query, $max_results = 10) {
-        $this->log_debug('Amazon API search called with query: ' . $query);
+    public function search_products($query, $max_results = 10, $country_code = 'US') {
+        $this->log_debug('Amazon API search called with query: ' . $query . ' for country: ' . $country_code);
         
         if (empty($this->api_key)) {
             $this->log_debug('Amazon API key not configured');
@@ -31,45 +31,38 @@ class Compare_Pricing_Amazon_API {
         
         $this->log_debug('Amazon API key found: ' . substr($this->api_key, 0, 8) . '...');
         
+        // Get marketplace information
+        $marketplace_info = $this->get_marketplace_info($country_code);
+        
         $debug_info = array();
         
-        // Step 1: Configuration check
-        $debug_info['config_check'] = array(
-            'status' => 'success',
-            'title' => 'Configuration Check',
-            'message' => 'API key configured',
-            'details' => array(
-                'API Key' => substr($this->api_key, 0, 8) . '...',
-                'Base URL' => $this->base_url
-            )
-        );
-        
-        // Step 2: Prepare request
+        // Build request parameters
         $params = array(
             'api_key' => $this->api_key,
             'type' => 'search',
             'search_term' => $query,
-            'amazon_domain' => 'amazon.com'
+            'amazon_domain' => $marketplace_info['domain'],
+            'max_page' => 1,
+            'sort_by' => 'price_low_to_high',
+            'output' => 'json'
         );
         
-        $debug_info['request_prep'] = array(
-            'status' => 'success',
-            'title' => 'Request Preparation',
-            'message' => 'Search parameters prepared',
+        $debug_info['request'] = array(
+            'status' => 'info',
+            'title' => 'API Request',
+            'message' => 'Searching Amazon ' . $marketplace_info['name'] . ' for: ' . $query,
             'details' => array(
-                'Search Term' => $query,
-                'Type' => 'search',
-                'Domain' => 'amazon.com',
+                'Domain' => $marketplace_info['domain'],
+                'Country' => $country_code,
                 'Max Results' => $max_results
             )
         );
         
-        // Step 3: Make API request
-        $url = $this->base_url . '?' . http_build_query($params);
+        $this->log_debug('Making request to: ' . $this->base_url);
+        $this->log_debug('Parameters: ' . print_r($params, true));
         
-        $this->log_debug('Making request to: ' . $url);
-        
-        $response = wp_remote_get($url, array(
+        $response = wp_remote_post($this->base_url, array(
+            'body' => $params,
             'timeout' => 30,
             'headers' => array(
                 'User-Agent' => 'WordPress Compare Pricing Plugin'
@@ -77,145 +70,110 @@ class Compare_Pricing_Amazon_API {
         ));
         
         if (is_wp_error($response)) {
-            $debug_info['api_request'] = array(
-                'status' => 'error',
-                'title' => 'API Request',
-                'message' => 'Request failed: ' . $response->get_error_message(),
-                'help' => 'Check your internet connection and API key'
-            );
+            $error_message = 'Request failed: ' . $response->get_error_message();
+            $this->log_debug($error_message);
             
             return array(
                 'success' => false,
-                'error' => 'API request failed: ' . $response->get_error_message(),
-                'debug' => $debug_info
+                'error' => $error_message,
+                'debug' => array_merge($debug_info, array(
+                    'request_error' => array(
+                        'status' => 'error',
+                        'title' => 'Request Error',
+                        'message' => $error_message
+                    )
+                ))
             );
         }
         
-        $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        
-        $debug_info['api_request'] = array(
-            'status' => $response_code == 200 ? 'success' : 'error',
-            'title' => 'API Request',
-            'message' => 'Response received',
-            'details' => array(
-                'Status Code' => $response_code,
-                'Response Size' => strlen($body) . ' bytes'
-            )
-        );
-        
-        if ($response_code !== 200) {
-            $debug_info['api_request']['message'] = 'API returned error status: ' . $response_code;
-            $debug_info['api_request']['help'] = 'Check your API key and request parameters';
-            
-            return array(
-                'success' => false,
-                'error' => 'API returned status: ' . $response_code,
-                'debug' => $debug_info
-            );
-        }
-        
-        // Step 4: Parse response
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $debug_info['response_parse'] = array(
-                'status' => 'error',
-                'title' => 'Response Parsing',
-                'message' => 'Failed to parse JSON response',
-                'help' => 'The API response is not valid JSON'
-            );
+            $error_message = 'Invalid JSON response: ' . json_last_error_msg();
+            $this->log_debug($error_message);
             
             return array(
                 'success' => false,
-                'error' => 'Invalid JSON response',
-                'debug' => $debug_info
+                'error' => $error_message,
+                'debug' => array_merge($debug_info, array(
+                    'json_error' => array(
+                        'status' => 'error',
+                        'title' => 'JSON Parse Error',
+                        'message' => $error_message,
+                        'raw_response' => substr($body, 0, 500) . '...'
+                    )
+                ))
             );
         }
         
-        $debug_info['response_parse'] = array(
-            'status' => 'success',
-            'title' => 'Response Parsing',
-            'message' => 'JSON parsed successfully'
-        );
-        
-        // Step 5: Check API response status
-        if (!isset($data['request_info']) || !$data['request_info']['success']) {
-            $error_msg = 'API request failed';
-            if (isset($data['request_info']['error'])) {
-                $error_msg = $data['request_info']['error'];
+        if (!isset($data['search_results']) || !is_array($data['search_results'])) {
+            $error_message = 'No search results in response';
+            if (isset($data['message'])) {
+                $error_message .= ': ' . $data['message'];
             }
             
-            $debug_info['api_status'] = array(
-                'status' => 'error',
-                'title' => 'API Status Check',
-                'message' => $error_msg,
-                'help' => 'Check your API key and credits remaining'
-            );
+            $this->log_debug($error_message);
             
             return array(
                 'success' => false,
-                'error' => $error_msg,
-                'debug' => $debug_info
+                'error' => $error_message,
+                'debug' => array_merge($debug_info, array(
+                    'no_results' => array(
+                        'status' => 'warning',
+                        'title' => 'No Results',
+                        'message' => $error_message,
+                        'response_keys' => array_keys($data)
+                    )
+                ))
             );
         }
         
-        $debug_info['api_status'] = array(
-            'status' => 'success',
-            'title' => 'API Status Check',
-            'message' => 'API request successful',
-            'details' => array(
-                'Credits Used' => $data['request_info']['credits_used'] ?? 'Unknown',
-                'Credits Remaining' => $data['request_info']['credits_remaining'] ?? 'Unknown'
-            )
-        );
-        
-        // Step 6: Process results
         $products = array();
+        $results_processed = 0;
         
-        if (isset($data['search_results']) && is_array($data['search_results'])) {
-            $count = 0;
-            foreach ($data['search_results'] as $item) {
-                if ($count >= $max_results) break;
-                
-                // Extract price
-                $price = 0;
-                if (isset($item['price']['value'])) {
-                    $price = floatval($item['price']['value']);
-                } elseif (isset($item['prices']) && is_array($item['prices']) && !empty($item['prices'])) {
-                    $price = floatval($item['prices'][0]['value']);
-                }
-                
-                if ($price > 0) {
-                    $products[] = array(
-                        'title' => $item['title'] ?? 'Unknown Product',
-                        'price' => $price,
-                        'currency' => $item['price']['currency'] ?? 'USD',
-                        'url' => $item['link'] ?? '',
-                        'image' => $item['image'] ?? '',
-                        'rating' => $item['rating'] ?? null,
-                        'reviews' => $item['ratings_total'] ?? null,
-                        'source' => 'amazon',
-                        'asin' => $item['asin'] ?? '',
-                        'is_prime' => $item['is_prime'] ?? false
-                    );
-                    $count++;
-                }
+        foreach ($data['search_results'] as $item) {
+            if ($results_processed >= $max_results) {
+                break;
+            }
+            
+            // Extract price
+            $price = 0;
+            if (isset($item['price']['raw'])) {
+                $price = floatval($item['price']['raw']);
+            } elseif (isset($item['price']['symbol']) && isset($item['price']['value'])) {
+                $price = floatval(str_replace(',', '', $item['price']['value']));
+            }
+            
+            if ($price > 0) {
+                $products[] = array(
+                    'title' => isset($item['title']) ? $item['title'] : 'Unknown Product',
+                    'price' => $price,
+                    'currency' => $marketplace_info['currency'],
+                    'url' => isset($item['link']) ? $item['link'] : '',
+                    'image' => isset($item['image']) ? $item['image'] : '',
+                    'source' => 'amazon',
+                    'marketplace' => $marketplace_info['name'],
+                    'country' => $country_code,
+                    'rating' => isset($item['rating']) ? $item['rating'] : null,
+                    'reviews' => isset($item['reviews_count']) ? $item['reviews_count'] : null
+                );
+                $results_processed++;
             }
         }
         
-        $debug_info['results_processing'] = array(
+        $debug_info['results'] = array(
             'status' => 'success',
             'title' => 'Results Processing',
-            'message' => count($products) . ' products processed',
+            'message' => 'Found ' . count($products) . ' products with valid prices',
             'details' => array(
-                'Total Results Found' => count($data['search_results'] ?? array()),
-                'Valid Products' => count($products),
-                'Max Results Limit' => $max_results
+                'Total items in response' => count($data['search_results']),
+                'Items with valid prices' => count($products),
+                'Marketplace' => $marketplace_info['name']
             )
         );
         
-        $this->log_debug('Amazon search completed. Found ' . count($products) . ' products');
+        $this->log_debug('Processed ' . count($products) . ' products from Amazon ' . $marketplace_info['name']);
         
         return array(
             'success' => true,
@@ -273,5 +231,25 @@ class Compare_Pricing_Amazon_API {
         if ($this->debug && defined('WP_DEBUG') && WP_DEBUG) {
             error_log('[Amazon API Debug] ' . $message);
         }
+    }
+    
+    /**
+     * Get marketplace information for different countries
+     */
+    private function get_marketplace_info($country_code) {
+        $marketplaces = array(
+            'US' => array('domain' => 'amazon.com', 'name' => 'Amazon.com', 'currency' => 'USD'),
+            'GB' => array('domain' => 'amazon.co.uk', 'name' => 'Amazon.co.uk', 'currency' => 'GBP'),
+            'DE' => array('domain' => 'amazon.de', 'name' => 'Amazon.de', 'currency' => 'EUR'),
+            'FR' => array('domain' => 'amazon.fr', 'name' => 'Amazon.fr', 'currency' => 'EUR'),
+            'IT' => array('domain' => 'amazon.it', 'name' => 'Amazon.it', 'currency' => 'EUR'),
+            'ES' => array('domain' => 'amazon.es', 'name' => 'Amazon.es', 'currency' => 'EUR'),
+            'CA' => array('domain' => 'amazon.ca', 'name' => 'Amazon.ca', 'currency' => 'CAD'),
+            'AU' => array('domain' => 'amazon.com.au', 'name' => 'Amazon.com.au', 'currency' => 'AUD'),
+            'JP' => array('domain' => 'amazon.co.jp', 'name' => 'Amazon.co.jp', 'currency' => 'JPY'),
+            'IN' => array('domain' => 'amazon.in', 'name' => 'Amazon.in', 'currency' => 'INR'),
+        );
+        
+        return isset($marketplaces[$country_code]) ? $marketplaces[$country_code] : $marketplaces['US'];
     }
 } 

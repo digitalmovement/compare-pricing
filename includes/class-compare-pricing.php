@@ -154,17 +154,25 @@ class Compare_Pricing {
                 return;
             }
 
-            // Get GTIN and product info from request
+            // Get request data
             $gtin = isset($_POST['gtin']) ? sanitize_text_field($_POST['gtin']) : '';
             $product_id = isset($_POST['product_id']) ? sanitize_text_field($_POST['product_id']) : '';
+            $location = isset($_POST['location']) ? $_POST['location'] : array('country_code' => 'US');
 
             if (empty($gtin)) {
                 wp_send_json_error('GTIN is required');
                 return;
             }
 
-            // Get cached or fresh results
-            $result = $this->get_cached_or_fetch_results($gtin, $product_id);
+            // Sanitize location data
+            $location = array(
+                'country_code' => isset($location['country_code']) ? sanitize_text_field($location['country_code']) : 'US',
+                'country_name' => isset($location['country_name']) ? sanitize_text_field($location['country_name']) : 'United States',
+                'detected' => isset($location['detected']) ? (bool)$location['detected'] : false
+            );
+
+            // Get cached or fresh results with location
+            $result = $this->get_cached_or_fetch_results($gtin, $product_id, $location);
             
             if ($result['success']) {
                 wp_send_json_success($result);
@@ -499,35 +507,40 @@ class Compare_Pricing {
     }
 
     /**
-     * Check cache first, then make API calls
+     * Get cached results or fetch fresh ones with location support
      */
-    private function get_cached_or_fetch_results($gtin, $product_id) {
-        $cache_key = 'compare_pricing_' . md5($gtin);
-        $cached_result = get_transient($cache_key);
+    private function get_cached_or_fetch_results($gtin, $product_id, $location = array()) {
+        // Include location in cache key
+        $location_key = isset($location['country_code']) ? $location['country_code'] : 'US';
+        $cache_key = 'compare_pricing_' . md5($gtin . '_' . $location_key);
+        $cache_duration = get_option('compare_pricing_cache_duration', 24) * HOUR_IN_SECONDS;
         
+        // Try to get cached results
+        $cached_result = get_transient($cache_key);
         if ($cached_result !== false) {
             $this->track_daily_stats('cache_hits');
-            error_log('Compare Pricing: Using cached results for GTIN: ' . $gtin);
+            $cached_result['cached'] = true;
             return $cached_result;
         }
         
-        // Track API call
-        $this->track_daily_stats('api_calls');
-        
         // Fetch fresh results
-        $result = $this->fetch_fresh_results($gtin, $product_id);
+        $this->track_daily_stats('api_calls');
+        $result = $this->fetch_fresh_results($gtin, $product_id, $location);
         
-        // Cache the results
-        $cache_duration = get_option('compare_pricing_cache_duration', 24) * HOUR_IN_SECONDS;
-        set_transient($cache_key, $result, $cache_duration);
+        // Cache successful results
+        if ($result['success']) {
+            set_transient($cache_key, $result, $cache_duration);
+        }
         
         return $result;
     }
 
     /**
-     * Fetch fresh results from APIs
+     * Fetch fresh results from APIs with location support
      */
-    private function fetch_fresh_results($gtin, $product_id) {
+    private function fetch_fresh_results($gtin, $product_id, $location = array()) {
+        $country_code = isset($location['country_code']) ? $location['country_code'] : 'US';
+        
         // Get WooCommerce product title for matching
         $wc_product_title = $this->get_wc_product_title($product_id);
         
@@ -542,13 +555,14 @@ class Compare_Pricing {
             'ebay_total' => 0,
             'ebay_relevant' => 0,
             'amazon_total' => 0,
-            'amazon_relevant' => 0
+            'amazon_relevant' => 0,
+            'location' => $location
         );
 
-        // Try eBay API
+        // Try eBay API with location
         if ($this->ebay_api) {
             $api_attempts++;
-            $ebay_results = $this->ebay_api->search_products($gtin, 10);
+            $ebay_results = $this->ebay_api->search_products($gtin, 10, $country_code);
             
             if (is_wp_error($ebay_results)) {
                 $errors['ebay'] = $ebay_results->get_error_message();
@@ -566,7 +580,6 @@ class Compare_Pricing {
                         }
                     }
                     
-                    // If we got results but none were relevant, record this as an error
                     if (count($ebay_results) > 0 && $filtering_stats['ebay_relevant'] === 0) {
                         $errors['ebay'] = 'Found ' . count($ebay_results) . ' products but none matched your product keywords';
                     }
@@ -581,10 +594,10 @@ class Compare_Pricing {
             $errors['ebay'] = 'eBay API not configured';
         }
 
-        // Try Amazon API
+        // Try Amazon API with location
         if ($this->amazon_api) {
             $api_attempts++;
-            $amazon_result = $this->amazon_api->search_products($gtin, 10);
+            $amazon_result = $this->amazon_api->search_products($gtin, 10, $country_code);
 
             if ($amazon_result['success'] && !empty($amazon_result['products'])) {
                 $all_results = array_merge($all_results, $amazon_result['products']);
@@ -600,7 +613,6 @@ class Compare_Pricing {
                         }
                     }
                     
-                    // If we got results but none were relevant, record this as an error
                     if (count($amazon_result['products']) > 0 && $filtering_stats['amazon_relevant'] === 0) {
                         $errors['amazon'] = 'Found ' . count($amazon_result['products']) . ' products but none matched your product keywords';
                     }
@@ -621,27 +633,9 @@ class Compare_Pricing {
         $filtering_stats['total_found'] = count($all_results);
         $filtering_stats['relevant_found'] = count($filtered_results);
 
-        // Record failed lookup if no relevant results (even if APIs returned data)
+        // Record failed lookup if no relevant results
         if (empty($filtered_results)) {
-            // Determine the failure reason
-            $failure_reason = 'No relevant results found';
-            
-            if ($api_attempts === 0) {
-                $failure_reason = 'No APIs configured';
-            } elseif ($successful_apis === 0) {
-                $failure_reason = 'All APIs failed to return data';
-            } elseif ($filtering_stats['total_found'] > 0) {
-                $failure_reason = 'Keyword matching failed - found ' . $filtering_stats['total_found'] . ' products but none matched your product';
-                
-                // Add specific keyword matching details to errors
-                if (!empty($wc_product_title)) {
-                    $min_matches = get_option('compare_pricing_min_keyword_matches', 2);
-                    $errors['keyword_matching'] = "Product title: '{$wc_product_title}' - Required {$min_matches} keyword matches but none found";
-                } else {
-                    $errors['keyword_matching'] = 'No WooCommerce product title available for keyword matching';
-                }
-            }
-            
+            $failure_reason = $this->determine_failure_reason($api_attempts, $successful_apis, $filtering_stats, $wc_product_title);
             $this->record_failed_lookup($gtin, $product_id, $errors, $failure_reason);
             return array(
                 'success' => false,
@@ -684,7 +678,20 @@ class Compare_Pricing {
             'amazon_count' => count(array_filter($filtered_results, function($r) { return $r['source'] === 'amazon'; })),
             'filtering_stats' => $filtering_stats,
             'wc_product_title' => $wc_product_title,
-            'errors' => $errors
+            'errors' => $errors,
+            'location' => $location
         );
+    }
+
+    private function determine_failure_reason($api_attempts, $successful_apis, $filtering_stats, $wc_product_title) {
+        if ($api_attempts === 0) {
+            return 'No APIs configured';
+        } elseif ($successful_apis === 0) {
+            return 'All APIs failed to return data';
+        } elseif ($filtering_stats['total_found'] > 0) {
+            return 'Keyword matching failed - found ' . $filtering_stats['total_found'] . ' products but none matched your product';
+        } else {
+            return 'No relevant results found';
+        }
     }
 } 

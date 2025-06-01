@@ -14,7 +14,7 @@ class Compare_Pricing_eBay_API {
         $this->sandbox = isset($options['sandbox_mode']) ? $options['sandbox_mode'] : get_option('compare_pricing_sandbox_mode', 0);
     }
     
-    public function search_products($query, $limit = 10) {
+    public function search_products($query, $limit = 10, $country_code = 'US') {
         if (empty($this->app_id)) {
             return new WP_Error('no_api_key', 'eBay API credentials not configured');
         }
@@ -25,6 +25,9 @@ class Compare_Pricing_eBay_API {
             return $access_token;
         }
         
+        // Get the appropriate eBay marketplace
+        $marketplace_info = $this->get_marketplace_info($country_code);
+        
         $endpoint = $this->sandbox ? 
             'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search' :
             'https://api.ebay.com/buy/browse/v1/item_summary/search';
@@ -32,7 +35,7 @@ class Compare_Pricing_eBay_API {
         // Build query parameters
         $params = array(
             'q' => $query,
-            'limit' => min($limit, 50), // eBay max is 50
+            'limit' => min($limit, 50),
             'sort' => 'price',
             'filter' => 'buyingOptions:{FIXED_PRICE}',
             'fieldgroups' => 'MATCHING_ITEMS,EXTENDED'
@@ -40,13 +43,14 @@ class Compare_Pricing_eBay_API {
         
         $url = $endpoint . '?' . http_build_query($params);
         
-        error_log('eBay API Request URL: ' . $url);
-        
         $headers = array(
             'Authorization' => 'Bearer ' . $access_token,
             'Content-Type' => 'application/json',
-            'X-EBAY-C-MARKETPLACE-ID' => 'EBAY_US'
+            'X-EBAY-C-MARKETPLACE-ID' => $marketplace_info['marketplace_id'],
+            'X-EBAY-C-ENDUSERCTX' => 'contextualLocation=country=' . $country_code
         );
+        
+        error_log('eBay API Request for ' . $country_code . ': ' . $url);
         
         $response = wp_remote_get($url, array(
             'headers' => $headers,
@@ -54,77 +58,39 @@ class Compare_Pricing_eBay_API {
         ));
         
         if (is_wp_error($response)) {
-            error_log('eBay API Request Error: ' . $response->get_error_message());
+            error_log('eBay API Error: ' . $response->get_error_message());
             return $response;
         }
         
-        $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        
-        error_log('eBay API Response Code: ' . $response_code);
-        error_log('eBay API Response Body: ' . substr($body, 0, 500) . '...');
-        
-        if ($response_code !== 200) {
-            return new WP_Error('api_error', 'eBay API returned status: ' . $response_code . ' - ' . $body);
-        }
-        
         $data = json_decode($body, true);
         
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return new WP_Error('json_error', 'Failed to parse eBay API response');
+        if (empty($data['itemSummaries'])) {
+            error_log('eBay API: No results found for query: ' . $query);
+            return array();
         }
         
-        // Check for API errors
-        if (isset($data['errors'])) {
-            $error_msg = 'eBay API Error: ';
-            foreach ($data['errors'] as $error) {
-                $error_msg .= $error['message'] . ' ';
+        $results = array();
+        foreach ($data['itemSummaries'] as $item) {
+            $price = 0;
+            if (isset($item['price']['value'])) {
+                $price = floatval($item['price']['value']);
             }
-            return new WP_Error('api_error', $error_msg);
+            
+            $results[] = array(
+                'title' => isset($item['title']) ? $item['title'] : 'Unknown Product',
+                'price' => $price,
+                'currency' => isset($item['price']['currency']) ? $item['price']['currency'] : $marketplace_info['currency'],
+                'url' => isset($item['itemWebUrl']) ? $item['itemWebUrl'] : '',
+                'image' => isset($item['image']['imageUrl']) ? $item['image']['imageUrl'] : '',
+                'source' => 'ebay',
+                'marketplace' => $marketplace_info['name'],
+                'country' => $country_code
+            );
         }
         
-        // Process results
-        $products = array();
-        
-        if (isset($data['itemSummaries']) && is_array($data['itemSummaries'])) {
-            foreach ($data['itemSummaries'] as $item) {
-                // Extract price
-                $price = 0;
-                if (isset($item['price']['value'])) {
-                    $price = floatval($item['price']['value']);
-                }
-                
-                // Skip items without valid prices
-                if ($price <= 0) {
-                    continue;
-                }
-                
-                $product = array(
-                    'title' => $item['title'] ?? 'Unknown Product',
-                    'price' => $price,
-                    'currency' => $item['price']['currency'] ?? 'USD',
-                    'url' => $item['itemWebUrl'] ?? '',
-                    'image' => $item['image']['imageUrl'] ?? '',
-                    'source' => 'ebay',
-                    'condition' => $item['condition'] ?? 'Unknown',
-                    'seller' => $item['seller']['username'] ?? 'Unknown',
-                    'shipping' => isset($item['shippingOptions'][0]['shippingCost']['value']) ? 
-                                 floatval($item['shippingOptions'][0]['shippingCost']['value']) : 0,
-                    'location' => $item['itemLocation']['country'] ?? 'US'
-                );
-                
-                // Add seller feedback if available
-                if (isset($item['seller']['feedbackPercentage'])) {
-                    $product['seller_rating'] = $item['seller']['feedbackPercentage'];
-                }
-                
-                $products[] = $product;
-            }
-        }
-        
-        error_log('eBay API: Processed ' . count($products) . ' products from ' . count($data['itemSummaries'] ?? array()) . ' items');
-        
-        return $products;
+        error_log('eBay API: Found ' . count($results) . ' results for ' . $country_code);
+        return $results;
     }
     
     public function search_by_gtin($gtin) {
@@ -379,5 +345,23 @@ class Compare_Pricing_eBay_API {
     // Method to get current environment
     public function get_environment() {
         return $this->sandbox ? 'Sandbox' : 'Production';
+    }
+    
+    /**
+     * Get marketplace information for different countries
+     */
+    private function get_marketplace_info($country_code) {
+        $marketplaces = array(
+            'US' => array('marketplace_id' => 'EBAY_US', 'name' => 'eBay.com', 'currency' => 'USD'),
+            'GB' => array('marketplace_id' => 'EBAY_GB', 'name' => 'eBay.co.uk', 'currency' => 'GBP'),
+            'DE' => array('marketplace_id' => 'EBAY_DE', 'name' => 'eBay.de', 'currency' => 'EUR'),
+            'FR' => array('marketplace_id' => 'EBAY_FR', 'name' => 'eBay.fr', 'currency' => 'EUR'),
+            'IT' => array('marketplace_id' => 'EBAY_IT', 'name' => 'eBay.it', 'currency' => 'EUR'),
+            'ES' => array('marketplace_id' => 'EBAY_ES', 'name' => 'eBay.es', 'currency' => 'EUR'),
+            'CA' => array('marketplace_id' => 'EBAY_CA', 'name' => 'eBay.ca', 'currency' => 'CAD'),
+            'AU' => array('marketplace_id' => 'EBAY_AU', 'name' => 'eBay.com.au', 'currency' => 'AUD'),
+        );
+        
+        return isset($marketplaces[$country_code]) ? $marketplaces[$country_code] : $marketplaces['US'];
     }
 } 
