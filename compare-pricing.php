@@ -73,3 +73,34 @@ register_deactivation_hook(__FILE__, function() {
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ebay_%' OR option_name LIKE '_transient_timeout_ebay_%'");
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_compare_pricing_%' OR option_name LIKE '_transient_timeout_compare_pricing_%'");
 });
+
+function compare_pricing_create_stats_table() {
+    global $wpdb;
+    
+    $table_name = $wpdb->prefix . 'compare_pricing_stats';
+    
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE $table_name (
+        id mediumint(9) NOT NULL AUTO_INCREMENT,
+        gtin varchar(50) NOT NULL,
+        product_id varchar(50) NOT NULL,
+        product_title text NOT NULL,
+        views int(11) DEFAULT 0,
+        clicks int(11) DEFAULT 0,
+        top_source varchar(20) DEFAULT '',
+        best_price decimal(10,2) DEFAULT NULL,
+        currency_symbol varchar(10) DEFAULT '',
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        last_viewed datetime DEFAULT NULL,
+        last_clicked datetime DEFAULT NULL,
+        PRIMARY KEY (id),
+        KEY gtin_product_date (gtin, product_id, created_at),
+        KEY created_at (created_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+register_activation_hook(__FILE__, 'compare_pricing_create_stats_table');

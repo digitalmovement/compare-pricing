@@ -15,15 +15,40 @@ class Compare_Pricing_Admin {
         add_action('wp_ajax_test_amazon_api', array($this, 'ajax_test_amazon_api'));
         add_action('wp_ajax_test_gtin_lookup', array($this, 'ajax_test_gtin_lookup'));
         add_action('wp_ajax_test_location_api', array($this, 'ajax_test_location_api'));
+        add_action('wp_ajax_compare_pricing_track_click', array($this, 'ajax_track_click'));
+        add_action('wp_ajax_nopriv_compare_pricing_track_click', array($this, 'ajax_track_click'));
     }
     
     public function add_admin_menu() {
-        add_options_page(
-            'Compare Pricing Settings',
+        // Add top-level menu
+        add_menu_page(
+            'Compare Pricing',
             'Compare Pricing',
             'manage_options',
             'compare-pricing',
+            array($this, 'admin_page'),
+            'dashicons-chart-line',
+            30
+        );
+        
+        // Add Settings submenu
+        add_submenu_page(
+            'compare-pricing',
+            'Settings',
+            'Settings',
+            'manage_options',
+            'compare-pricing',
             array($this, 'admin_page')
+        );
+        
+        // Add Stats submenu
+        add_submenu_page(
+            'compare-pricing',
+            'Statistics',
+            'Statistics',
+            'manage_options',
+            'compare-pricing-stats',
+            array($this, 'stats_page')
         );
     }
     
@@ -1045,5 +1070,394 @@ if (function_exists('compare_pricing_display')) {
                 'help' => 'Consider adding support for this country if you have many users from this location'
             );
         }
+    }
+
+    public function stats_page() {
+        // Handle date filtering
+        $date_filter = isset($_GET['date_filter']) ? sanitize_text_field($_GET['date_filter']) : 'week';
+        $custom_start = isset($_GET['custom_start']) ? sanitize_text_field($_GET['custom_start']) : '';
+        $custom_end = isset($_GET['custom_end']) ? sanitize_text_field($_GET['custom_end']) : '';
+        $sort_by = isset($_GET['sort_by']) ? sanitize_text_field($_GET['sort_by']) : 'views';
+        $sort_order = isset($_GET['sort_order']) ? sanitize_text_field($_GET['sort_order']) : 'desc';
+        
+        // Get stats data
+        $stats_data = $this->get_stats_data($date_filter, $custom_start, $custom_end, $sort_by, $sort_order);
+        
+        ?>
+        <div class="wrap">
+            <h1>Compare Pricing Statistics</h1>
+            
+            <!-- Filters -->
+            <div class="stats-filters">
+                <form method="get" action="">
+                    <input type="hidden" name="page" value="compare-pricing-stats">
+                    
+                    <div class="filter-row">
+                        <label for="date_filter">Time Period:</label>
+                        <select name="date_filter" id="date_filter" onchange="toggleCustomDates()">
+                            <option value="today" <?php selected($date_filter, 'today'); ?>>Today</option>
+                            <option value="week" <?php selected($date_filter, 'week'); ?>>This Week</option>
+                            <option value="month" <?php selected($date_filter, 'month'); ?>>This Month</option>
+                            <option value="year" <?php selected($date_filter, 'year'); ?>>This Year</option>
+                            <option value="custom" <?php selected($date_filter, 'custom'); ?>>Custom Range</option>
+                        </select>
+                        
+                        <div id="custom-dates" style="<?php echo $date_filter === 'custom' ? 'display:inline-block;' : 'display:none;'; ?>">
+                            <input type="date" name="custom_start" value="<?php echo esc_attr($custom_start); ?>" placeholder="Start Date">
+                            <input type="date" name="custom_end" value="<?php echo esc_attr($custom_end); ?>" placeholder="End Date">
+                        </div>
+                        
+                        <label for="sort_by">Sort by:</label>
+                        <select name="sort_by" id="sort_by">
+                            <option value="views" <?php selected($sort_by, 'views'); ?>>Views</option>
+                            <option value="clicks" <?php selected($sort_by, 'clicks'); ?>>Clicks</option>
+                            <option value="ctr" <?php selected($sort_by, 'ctr'); ?>>Click-through Rate</option>
+                            <option value="product_title" <?php selected($sort_by, 'product_title'); ?>>Product Name</option>
+                            <option value="last_viewed" <?php selected($sort_by, 'last_viewed'); ?>>Last Viewed</option>
+                        </select>
+                        
+                        <select name="sort_order" id="sort_order">
+                            <option value="desc" <?php selected($sort_order, 'desc'); ?>>Descending</option>
+                            <option value="asc" <?php selected($sort_order, 'asc'); ?>>Ascending</option>
+                        </select>
+                        
+                        <input type="submit" class="button" value="Filter">
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Master Stats -->
+            <div class="stats-overview">
+                <div class="stats-cards">
+                    <div class="stats-card">
+                        <h3>Total Views</h3>
+                        <div class="stats-number"><?php echo number_format($stats_data['totals']['views']); ?></div>
+                    </div>
+                    <div class="stats-card">
+                        <h3>Total Clicks</h3>
+                        <div class="stats-number"><?php echo number_format($stats_data['totals']['clicks']); ?></div>
+                    </div>
+                    <div class="stats-card">
+                        <h3>Click-through Rate</h3>
+                        <div class="stats-number"><?php echo $stats_data['totals']['ctr']; ?>%</div>
+                    </div>
+                    <div class="stats-card">
+                        <h3>Unique Products</h3>
+                        <div class="stats-number"><?php echo number_format($stats_data['totals']['unique_products']); ?></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Detailed Stats Table -->
+            <div class="stats-table-container">
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>GTIN</th>
+                            <th>Views</th>
+                            <th>Clicks</th>
+                            <th>CTR</th>
+                            <th>Best Price Found</th>
+                            <th>Top Source</th>
+                            <th>Last Viewed</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!empty($stats_data['products'])): ?>
+                            <?php foreach ($stats_data['products'] as $product): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo esc_html($product['product_title']); ?></strong>
+                                        <?php if ($product['product_id'] && $product['product_id'] !== 'custom'): ?>
+                                            <br><small><a href="<?php echo get_edit_post_link($product['product_id']); ?>" target="_blank">Edit Product</a></small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo esc_html($product['gtin']); ?></td>
+                                    <td><?php echo number_format($product['views']); ?></td>
+                                    <td><?php echo number_format($product['clicks']); ?></td>
+                                    <td><?php echo $product['ctr']; ?>%</td>
+                                    <td>
+                                        <?php if ($product['best_price']): ?>
+                                            <?php echo esc_html($product['currency_symbol'] . number_format($product['best_price'], 2)); ?>
+                                        <?php else: ?>
+                                            <span class="no-data">No data</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo esc_html($product['top_source']); ?></td>
+                                    <td><?php echo esc_html($product['last_viewed']); ?></td>
+                                    <td>
+                                        <a href="<?php echo admin_url('admin.php?page=compare-pricing-stats&product_detail=' . urlencode($product['gtin'])); ?>" class="button button-small">View Details</a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="9">No data available for the selected period.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            
+            <?php if (isset($_GET['product_detail'])): ?>
+                <?php $this->render_product_detail_modal($_GET['product_detail']); ?>
+            <?php endif; ?>
+        </div>
+        
+        <script>
+        function toggleCustomDates() {
+            var filter = document.getElementById('date_filter').value;
+            var customDates = document.getElementById('custom-dates');
+            customDates.style.display = filter === 'custom' ? 'inline-block' : 'none';
+        }
+        </script>
+        
+        <style>
+        .stats-filters {
+            background: #fff;
+            padding: 15px;
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .filter-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .stats-overview {
+            margin: 20px 0;
+        }
+        
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stats-card {
+            background: #fff;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .stats-card h3 {
+            margin: 0 0 10px 0;
+            color: #666;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        
+        .stats-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #0073aa;
+        }
+        
+        .stats-table-container {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .no-data {
+            color: #999;
+            font-style: italic;
+        }
+        
+        #custom-dates {
+            margin-left: 10px;
+        }
+        
+        #custom-dates input {
+            margin-right: 5px;
+        }
+        </style>
+        <?php
+    }
+
+    private function get_stats_data($date_filter, $custom_start, $custom_end, $sort_by, $sort_order) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'compare_pricing_stats';
+        
+        // Build date condition
+        $date_condition = $this->build_date_condition($date_filter, $custom_start, $custom_end);
+        
+        // Get totals
+        $totals_query = "
+            SELECT 
+                SUM(views) as total_views,
+                SUM(clicks) as total_clicks,
+                COUNT(DISTINCT gtin) as unique_products
+            FROM {$table_name} 
+            WHERE {$date_condition}
+        ";
+        
+        $totals = $wpdb->get_row($totals_query, ARRAY_A);
+        $ctr = $totals['total_views'] > 0 ? round(($totals['total_clicks'] / $totals['total_views']) * 100, 2) : 0;
+        
+        // Get product stats
+        $sort_column = $this->get_sort_column($sort_by);
+        $products_query = "
+            SELECT 
+                gtin,
+                product_id,
+                product_title,
+                SUM(views) as views,
+                SUM(clicks) as clicks,
+                best_price,
+                currency_symbol,
+                top_source,
+                MAX(last_viewed) as last_viewed
+            FROM {$table_name} 
+            WHERE {$date_condition}
+            GROUP BY gtin, product_id, product_title
+            ORDER BY {$sort_column} {$sort_order}
+        ";
+        
+        $products = $wpdb->get_results($products_query, ARRAY_A);
+        
+        // Calculate CTR for each product
+        foreach ($products as &$product) {
+            $product['ctr'] = $product['views'] > 0 ? round(($product['clicks'] / $product['views']) * 100, 2) : 0;
+            $product['last_viewed'] = $product['last_viewed'] ? date('M j, Y g:i A', strtotime($product['last_viewed'])) : 'Never';
+            $product['top_source'] = $product['top_source'] ?: 'Unknown';
+        }
+        
+        return array(
+            'totals' => array(
+                'views' => (int)$totals['total_views'],
+                'clicks' => (int)$totals['total_clicks'],
+                'ctr' => $ctr,
+                'unique_products' => (int)$totals['unique_products']
+            ),
+            'products' => $products
+        );
+    }
+
+    private function build_date_condition($date_filter, $custom_start, $custom_end) {
+        switch ($date_filter) {
+            case 'today':
+                return "DATE(created_at) = CURDATE()";
+            case 'week':
+                return "created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)";
+            case 'month':
+                return "created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
+            case 'year':
+                return "created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)";
+            case 'custom':
+                if ($custom_start && $custom_end) {
+                    return "DATE(created_at) BETWEEN '" . esc_sql($custom_start) . "' AND '" . esc_sql($custom_end) . "'";
+                }
+                return "1=1"; // No filter if dates not provided
+            default:
+                return "created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)";
+        }
+    }
+
+    private function get_sort_column($sort_by) {
+        switch ($sort_by) {
+            case 'views':
+                return 'views';
+            case 'clicks':
+                return 'clicks';
+            case 'ctr':
+                return '(clicks/views)';
+            case 'product_title':
+                return 'product_title';
+            case 'last_viewed':
+                return 'last_viewed';
+            default:
+                return 'views';
+        }
+    }
+
+    private function render_product_detail_modal($gtin) {
+        // Implement the logic to render the product detail modal
+        // This is a placeholder and should be replaced with the actual implementation
+        echo '<div class="wrap">';
+        echo '<h1>Product Details for GTIN: ' . esc_html($gtin) . '</h1>';
+        echo '<p>This is a placeholder for the product detail modal. The actual implementation should be here.</p>';
+        echo '</div>';
+    }
+
+    public function ajax_track_click() {
+        check_ajax_referer('compare_pricing_nonce', 'nonce');
+        
+        $gtin = sanitize_text_field($_POST['gtin']);
+        $product_id = sanitize_text_field($_POST['product_id']);
+        $source = sanitize_text_field($_POST['source']); // 'ebay' or 'amazon'
+        $price = floatval($_POST['price']);
+        $currency_symbol = sanitize_text_field($_POST['currency_symbol']);
+        
+        $this->track_click($gtin, $product_id, $source, $price, $currency_symbol);
+        
+        wp_send_json_success('Click tracked');
+    }
+
+    private function track_click($gtin, $product_id, $source, $price, $currency_symbol) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'compare_pricing_stats';
+        
+        // Get or create stats record
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$table_name} WHERE gtin = %s AND product_id = %s AND DATE(created_at) = CURDATE()",
+            $gtin, $product_id
+        ));
+        
+        if ($existing) {
+            // Update existing record
+            $wpdb->update(
+                $table_name,
+                array(
+                    'clicks' => $existing->clicks + 1,
+                    'top_source' => $source,
+                    'best_price' => $price,
+                    'currency_symbol' => $currency_symbol,
+                    'last_clicked' => current_time('mysql')
+                ),
+                array('id' => $existing->id)
+            );
+        } else {
+            // This shouldn't happen if view was tracked first, but handle it
+            $product_title = $this->get_product_title_for_stats($product_id, $gtin);
+            
+            $wpdb->insert(
+                $table_name,
+                array(
+                    'gtin' => $gtin,
+                    'product_id' => $product_id,
+                    'product_title' => $product_title,
+                    'views' => 0,
+                    'clicks' => 1,
+                    'top_source' => $source,
+                    'best_price' => $price,
+                    'currency_symbol' => $currency_symbol,
+                    'created_at' => current_time('mysql'),
+                    'last_viewed' => current_time('mysql'),
+                    'last_clicked' => current_time('mysql')
+                )
+            );
+        }
+    }
+
+    private function get_product_title_for_stats($product_id, $gtin) {
+        if ($product_id && $product_id !== 'custom') {
+            $product = wc_get_product($product_id);
+            if ($product) {
+                return $product->get_name();
+            }
+        }
+        return 'Product with GTIN: ' . $gtin;
     }
 } 

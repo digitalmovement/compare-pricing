@@ -115,7 +115,7 @@ jQuery(document).ready(function($) {
                     html += '<div class="price-title">' + data.overall_best.title + '</div>';
                 }
                 if (data.overall_best.url) {
-                    html += '<a href="' + data.overall_best.url + '" target="_blank" class="view-deal-btn">View Deal</a>';
+                    html += '<a href="' + data.overall_best.url + '" target="_blank" class="view-deal-btn track-click" data-source="' + data.overall_best.source + '" data-price="' + data.overall_best.price + '" data-currency="' + currencySymbol + '">View Deal</a>';
                 }
                 html += '</div>';
                 html += '</div>';
@@ -131,7 +131,7 @@ jQuery(document).ready(function($) {
                     html += '<div class="platform-name">eBay</div>';
                     html += '<div class="platform-price">' + currencySymbol + data.ebay_best.price.toFixed(2) + '</div>';
                     if (data.ebay_best.url) {
-                        html += '<a href="' + data.ebay_best.url + '" target="_blank" class="platform-link">View</a>';
+                        html += '<a href="' + data.ebay_best.url + '" target="_blank" class="platform-link track-click" data-source="ebay" data-price="' + data.ebay_best.price + '" data-currency="' + currencySymbol + '">View</a>';
                     }
                     html += '</div>';
                 }
@@ -141,7 +141,7 @@ jQuery(document).ready(function($) {
                     html += '<div class="platform-name">Amazon</div>';
                     html += '<div class="platform-price">' + currencySymbol + data.amazon_best.price.toFixed(2) + '</div>';
                     if (data.amazon_best.url) {
-                        html += '<a href="' + data.amazon_best.url + '" target="_blank" class="platform-link">View</a>';
+                        html += '<a href="' + data.amazon_best.url + '" target="_blank" class="platform-link track-click" data-source="amazon" data-price="' + data.amazon_best.price + '" data-currency="' + currencySymbol + '">View</a>';
                     }
                     html += '</div>';
                 }
@@ -159,6 +159,29 @@ jQuery(document).ready(function($) {
         }
         
         $content.html(html);
+        
+        // Add click tracking to all links
+        $content.find('.track-click').on('click', function(e) {
+            var $link = $(this);
+            var source = $link.data('source');
+            var price = $link.data('price');
+            var currency = $link.data('currency');
+            var gtin = $content.closest('.compare-pricing-container').data('gtin');
+            var productId = $content.closest('.compare-pricing-container').data('product-id');
+            
+            // Track the click
+            $.post(comparePricing.ajax_url, {
+                action: 'compare_pricing_track_click',
+                gtin: gtin,
+                product_id: productId,
+                source: source,
+                price: price,
+                currency_symbol: currency,
+                nonce: comparePricing.nonce
+            });
+            
+            // Let the link proceed normally
+        });
     }
     
     function getCurrencySymbol(countryCode) {

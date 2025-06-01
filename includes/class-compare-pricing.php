@@ -164,26 +164,79 @@ class Compare_Pricing {
                 return;
             }
 
-            // Sanitize location data
-            $location = array(
-                'country_code' => isset($location['country_code']) ? sanitize_text_field($location['country_code']) : 'US',
-                'country_name' => isset($location['country_name']) ? sanitize_text_field($location['country_name']) : 'United States',
-                'detected' => isset($location['detected']) ? (bool)$location['detected'] : false
-            );
+            // Track the view
+            $this->track_view($gtin, $product_id);
 
-            // Get cached or fresh results with location
-            $result = $this->get_cached_or_fetch_results($gtin, $product_id, $location);
+            // Get cached or fresh results
+            $cache_key = 'compare_pricing_' . md5($gtin . '_' . $location['country_code']);
+            $cache_duration = get_option('compare_pricing_cache_duration', 24) * HOUR_IN_SECONDS;
             
-            if ($result['success']) {
-                wp_send_json_success($result);
-            } else {
-                wp_send_json_error($result['error']);
+            $results = get_transient($cache_key);
+            
+            if ($results === false) {
+                $results = $this->fetch_fresh_results($gtin, $product_id, $location);
+                
+                if ($results['success']) {
+                    set_transient($cache_key, $results, $cache_duration);
+                }
             }
-            
+
+            wp_send_json_success($results);
+
         } catch (Exception $e) {
-            error_log('Compare Pricing Exception: ' . $e->getMessage());
-            wp_send_json_error('An error occurred: ' . $e->getMessage());
+            error_log('Compare Pricing Error: ' . $e->getMessage());
+            wp_send_json_error('An error occurred while fetching pricing data');
         }
+    }
+    
+    private function track_view($gtin, $product_id) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'compare_pricing_stats';
+        
+        // Get or create today's stats record
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$table_name} WHERE gtin = %s AND product_id = %s AND DATE(created_at) = CURDATE()",
+            $gtin, $product_id
+        ));
+        
+        if ($existing) {
+            // Update existing record
+            $wpdb->update(
+                $table_name,
+                array(
+                    'views' => $existing->views + 1,
+                    'last_viewed' => current_time('mysql')
+                ),
+                array('id' => $existing->id)
+            );
+        } else {
+            // Create new record
+            $product_title = $this->get_product_title_for_stats($product_id, $gtin);
+            
+            $wpdb->insert(
+                $table_name,
+                array(
+                    'gtin' => $gtin,
+                    'product_id' => $product_id,
+                    'product_title' => $product_title,
+                    'views' => 1,
+                    'clicks' => 0,
+                    'created_at' => current_time('mysql'),
+                    'last_viewed' => current_time('mysql')
+                )
+            );
+        }
+    }
+    
+    private function get_product_title_for_stats($product_id, $gtin) {
+        if ($product_id && $product_id !== 'custom') {
+            $product = wc_get_product($product_id);
+            if ($product) {
+                return $product->get_name();
+            }
+        }
+        return 'Product with GTIN: ' . $gtin;
     }
     
     private function display_price_comparison($search_term, $limit = 5) {
