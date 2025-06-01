@@ -36,6 +36,7 @@ class Compare_Pricing_Admin {
         register_setting('compare_pricing_settings', 'compare_pricing_cache_duration');
         register_setting('compare_pricing_settings', 'compare_pricing_sandbox_mode');
         register_setting('compare_pricing_settings', 'compare_pricing_min_keyword_matches');
+        register_setting('compare_pricing_settings', 'compare_pricing_debug_mode');
         
         // eBay API Settings
         add_settings_section(
@@ -113,6 +114,14 @@ class Compare_Pricing_Admin {
             'min_keyword_matches',
             'Minimum Keyword Matches',
             array($this, 'min_keyword_matches_callback'),
+            'compare_pricing_settings',
+            'general_section'
+        );
+        
+        add_settings_field(
+            'debug_mode',
+            'Debug Mode',
+            array($this, 'debug_mode_callback'),
             'compare_pricing_settings',
             'general_section'
         );
@@ -434,6 +443,12 @@ if (function_exists('compare_pricing_display')) {
         echo '<option value="3"' . selected($value, 3, false) . '>3 keyword matches (strict)</option>';
         echo '</select>';
         echo '<p class="description">How many keywords must match between your product and API results to be considered relevant</p>';
+    }
+    
+    public function debug_mode_callback() {
+        $value = get_option('compare_pricing_debug_mode', 0);
+        echo '<input type="checkbox" name="compare_pricing_debug_mode" value="1" ' . checked(1, $value, false) . ' />';
+        echo '<p class="description">Enable detailed logging for troubleshooting. Logs will appear in your WordPress debug.log file.</p>';
     }
     
     // AJAX handlers for API testing

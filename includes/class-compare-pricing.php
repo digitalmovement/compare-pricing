@@ -9,7 +9,7 @@ class Compare_Pricing {
         // Initialize API classes
         $this->ebay_api = new Compare_Pricing_eBay_API();
         
-        // Initialize Amazon API with options
+        // Initialize Amazon API with options including debug mode
         $amazon_options = array(
             'amazon_api_key' => get_option('compare_pricing_amazon_api_key', ''),
             'debug_mode' => get_option('compare_pricing_debug_mode', 0)

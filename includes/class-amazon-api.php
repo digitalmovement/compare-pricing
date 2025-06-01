@@ -6,15 +6,22 @@ class Compare_Pricing_Amazon_API {
     private $debug;
     
     public function __construct($options = array()) {
-        $this->api_key = isset($options['amazon_api_key']) ? $options['amazon_api_key'] : '';
-        $this->debug = isset($options['debug_mode']) ? $options['debug_mode'] : false;
+        $this->api_key = isset($options['amazon_api_key']) ? trim($options['amazon_api_key']) : '';
+        $this->debug = isset($options['debug_mode']) ? $options['debug_mode'] : get_option('compare_pricing_debug_mode', 0);
+        
+        // Log initialization
+        $this->log_debug('Amazon API initialized with debug mode: ' . ($this->debug ? 'ON' : 'OFF'));
+        $this->log_debug('API key length: ' . strlen($this->api_key));
     }
     
     public function search_products($query, $max_results = 10, $country_code = 'US') {
-        $this->log_debug('Amazon API search called with query: ' . $query . ' for country: ' . $country_code);
+        $this->log_debug('=== Amazon API Search Started ===');
+        $this->log_debug('Query: ' . $query);
+        $this->log_debug('Country: ' . $country_code);
+        $this->log_debug('Max Results: ' . $max_results);
         
         if (empty($this->api_key)) {
-            $this->log_debug('Amazon API key not configured');
+            $this->log_debug('ERROR: Amazon API key not configured');
             return array(
                 'success' => false,
                 'error' => 'Amazon API key not configured',
@@ -23,16 +30,17 @@ class Compare_Pricing_Amazon_API {
                         'status' => 'error',
                         'title' => 'Configuration Check',
                         'message' => 'Amazon API key is missing',
-                        'help' => 'Please configure your ASIN Data API key in the plugin settings'
+                        'help' => 'Please configure your ASIN Data API key in the plugin settings. Get your key from: https://asindataapi.com/'
                     )
                 )
             );
         }
         
-        $this->log_debug('Amazon API key found: ' . substr($this->api_key, 0, 8) . '...');
+        $this->log_debug('API key found: ' . substr($this->api_key, 0, 8) . '...' . substr($this->api_key, -4));
         
         // Get marketplace information
         $marketplace_info = $this->get_marketplace_info($country_code);
+        $this->log_debug('Marketplace: ' . $marketplace_info['name'] . ' (' . $marketplace_info['domain'] . ')');
         
         $debug_info = array();
         
@@ -47,6 +55,8 @@ class Compare_Pricing_Amazon_API {
             'output' => 'json'
         );
         
+        $this->log_debug('Request parameters: ' . print_r($params, true));
+        
         $debug_info['request'] = array(
             'status' => 'info',
             'title' => 'API Request',
@@ -55,25 +65,25 @@ class Compare_Pricing_Amazon_API {
                 'Domain' => $marketplace_info['domain'],
                 'Country' => $country_code,
                 'Max Results' => $max_results,
-                'API Endpoint' => $this->base_url
+                'API Endpoint' => $this->base_url,
+                'API Key (partial)' => substr($this->api_key, 0, 8) . '...' . substr($this->api_key, -4)
             )
         );
         
-        $this->log_debug('Making request to: ' . $this->base_url);
-        $this->log_debug('Parameters: ' . print_r($params, true));
+        $this->log_debug('Making POST request to: ' . $this->base_url);
         
         $response = wp_remote_post($this->base_url, array(
             'body' => $params,
             'timeout' => 30,
             'headers' => array(
-                'User-Agent' => 'WordPress Compare Pricing Plugin',
+                'User-Agent' => 'WordPress Compare Pricing Plugin v1.0',
                 'Content-Type' => 'application/x-www-form-urlencoded'
             )
         ));
         
         if (is_wp_error($response)) {
             $error_message = 'Request failed: ' . $response->get_error_message();
-            $this->log_debug($error_message);
+            $this->log_debug('ERROR: ' . $error_message);
             
             return array(
                 'success' => false,
@@ -93,7 +103,7 @@ class Compare_Pricing_Amazon_API {
         $body = wp_remote_retrieve_body($response);
         
         $this->log_debug('Response code: ' . $response_code);
-        $this->log_debug('Response body: ' . substr($body, 0, 500) . '...');
+        $this->log_debug('Response body (first 1000 chars): ' . substr($body, 0, 1000));
         
         if ($response_code !== 200) {
             $debug_info['response_error'] = array(
@@ -102,9 +112,9 @@ class Compare_Pricing_Amazon_API {
                 'message' => 'API returned HTTP ' . $response_code,
                 'details' => array(
                     'Response Code' => $response_code,
-                    'Response Body' => substr($body, 0, 200) . '...'
+                    'Response Body' => substr($body, 0, 500) . '...'
                 ),
-                'help' => 'Check your API key and account status'
+                'help' => 'Check your API key and account status at asindataapi.com'
             );
             
             return array(
@@ -117,13 +127,15 @@ class Compare_Pricing_Amazon_API {
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->log_debug('ERROR: JSON decode failed - ' . json_last_error_msg());
+            
             $debug_info['json_error'] = array(
                 'status' => 'error',
                 'title' => 'JSON Parse Error',
                 'message' => 'Failed to parse API response: ' . json_last_error_msg(),
                 'details' => array(
                     'JSON Error' => json_last_error_msg(),
-                    'Raw Response' => substr($body, 0, 300) . '...'
+                    'Raw Response' => substr($body, 0, 500) . '...'
                 )
             );
             
@@ -134,13 +146,17 @@ class Compare_Pricing_Amazon_API {
             );
         }
         
+        $this->log_debug('Parsed JSON response: ' . print_r($data, true));
+        
         // Check for API errors in response
         if (isset($data['error'])) {
+            $this->log_debug('ERROR: API returned error - ' . $data['error']);
+            
             $debug_info['api_error'] = array(
                 'status' => 'error',
                 'title' => 'API Error',
                 'message' => 'ASIN Data API returned error: ' . $data['error'],
-                'help' => 'Check your API key, credits, and request parameters'
+                'help' => $this->get_error_help($data['error'])
             );
             
             return array(
@@ -152,6 +168,8 @@ class Compare_Pricing_Amazon_API {
         
         // Check if we have search results
         if (!isset($data['search_results']) || !is_array($data['search_results'])) {
+            $this->log_debug('WARNING: No search results found in response');
+            
             $debug_info['no_results'] = array(
                 'status' => 'warning',
                 'title' => 'No Results',
@@ -170,16 +188,21 @@ class Compare_Pricing_Amazon_API {
             );
         }
         
+        $this->log_debug('Found ' . count($data['search_results']) . ' search results');
+        
         $products = array();
         $results_processed = 0;
         
-        foreach ($data['search_results'] as $item) {
+        foreach ($data['search_results'] as $index => $item) {
             if ($results_processed >= $max_results) {
                 break;
             }
             
+            $this->log_debug('Processing item ' . $index . ': ' . (isset($item['title']) ? $item['title'] : 'No title'));
+            
             // Skip items without price
             if (!isset($item['price']['raw']) || $item['price']['raw'] <= 0) {
+                $this->log_debug('Skipping item - no valid price');
                 continue;
             }
             
@@ -197,6 +220,8 @@ class Compare_Pricing_Amazon_API {
                 'asin' => isset($item['asin']) ? $item['asin'] : null
             );
             $results_processed++;
+            
+            $this->log_debug('Added product: ' . $item['title'] . ' - $' . $item['price']['raw']);
         }
         
         $debug_info['results'] = array(
@@ -211,7 +236,8 @@ class Compare_Pricing_Amazon_API {
             )
         );
         
-        $this->log_debug('Processed ' . count($products) . ' products from Amazon ' . $marketplace_info['name']);
+        $this->log_debug('=== Amazon API Search Completed ===');
+        $this->log_debug('Returning ' . count($products) . ' products');
         
         return array(
             'success' => true,
@@ -382,8 +408,8 @@ class Compare_Pricing_Amazon_API {
     }
     
     private function log_debug($message) {
-        if ($this->debug && defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[Amazon API Debug] ' . $message);
+        if ($this->debug) {
+            error_log('[Compare Pricing - Amazon API] ' . $message);
         }
     }
     
