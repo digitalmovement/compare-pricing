@@ -171,6 +171,13 @@ class Compare_Pricing_Admin {
                 </div>
                 
                 <div class="api-test-section">
+                    <h3>Location Detection Test</h3>
+                    <p>Test the freeipapi.com service used for detecting user location and regional pricing.</p>
+                    <button type="button" id="test-location-api" class="test-button">Test Location API</button>
+                    <div id="location-test-results" class="test-results"></div>
+                </div>
+                
+                <div class="api-test-section">
                     <h3>GTIN Lookup Test</h3>
                     <div class="gtin-test-controls">
                         <input type="text" id="test-gtin" placeholder="Enter GTIN/UPC/EAN" />

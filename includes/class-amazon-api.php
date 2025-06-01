@@ -36,7 +36,7 @@ class Compare_Pricing_Amazon_API {
         
         $debug_info = array();
         
-        // Build request parameters
+        // Build request parameters for ASIN Data API
         $params = array(
             'api_key' => $this->api_key,
             'type' => 'search',
@@ -54,7 +54,8 @@ class Compare_Pricing_Amazon_API {
             'details' => array(
                 'Domain' => $marketplace_info['domain'],
                 'Country' => $country_code,
-                'Max Results' => $max_results
+                'Max Results' => $max_results,
+                'API Endpoint' => $this->base_url
             )
         );
         
@@ -65,7 +66,8 @@ class Compare_Pricing_Amazon_API {
             'body' => $params,
             'timeout' => 30,
             'headers' => array(
-                'User-Agent' => 'WordPress Compare Pricing Plugin'
+                'User-Agent' => 'WordPress Compare Pricing Plugin',
+                'Content-Type' => 'application/x-www-form-urlencoded'
             )
         ));
         
@@ -80,52 +82,91 @@ class Compare_Pricing_Amazon_API {
                     'request_error' => array(
                         'status' => 'error',
                         'title' => 'Request Error',
-                        'message' => $error_message
+                        'message' => $error_message,
+                        'help' => 'Check your server\'s internet connection and firewall settings'
                     )
                 ))
             );
         }
         
+        $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
+        
+        $this->log_debug('Response code: ' . $response_code);
+        $this->log_debug('Response body: ' . substr($body, 0, 500) . '...');
+        
+        if ($response_code !== 200) {
+            $debug_info['response_error'] = array(
+                'status' => 'error',
+                'title' => 'HTTP Response Error',
+                'message' => 'API returned HTTP ' . $response_code,
+                'details' => array(
+                    'Response Code' => $response_code,
+                    'Response Body' => substr($body, 0, 200) . '...'
+                ),
+                'help' => 'Check your API key and account status'
+            );
+            
+            return array(
+                'success' => false,
+                'error' => 'API returned HTTP ' . $response_code,
+                'debug' => $debug_info
+            );
+        }
+        
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $error_message = 'Invalid JSON response: ' . json_last_error_msg();
-            $this->log_debug($error_message);
+            $debug_info['json_error'] = array(
+                'status' => 'error',
+                'title' => 'JSON Parse Error',
+                'message' => 'Failed to parse API response: ' . json_last_error_msg(),
+                'details' => array(
+                    'JSON Error' => json_last_error_msg(),
+                    'Raw Response' => substr($body, 0, 300) . '...'
+                )
+            );
             
             return array(
                 'success' => false,
-                'error' => $error_message,
-                'debug' => array_merge($debug_info, array(
-                    'json_error' => array(
-                        'status' => 'error',
-                        'title' => 'JSON Parse Error',
-                        'message' => $error_message,
-                        'raw_response' => substr($body, 0, 500) . '...'
-                    )
-                ))
+                'error' => 'Invalid JSON response',
+                'debug' => $debug_info
             );
         }
         
-        if (!isset($data['search_results']) || !is_array($data['search_results'])) {
-            $error_message = 'No search results in response';
-            if (isset($data['message'])) {
-                $error_message .= ': ' . $data['message'];
-            }
-            
-            $this->log_debug($error_message);
+        // Check for API errors in response
+        if (isset($data['error'])) {
+            $debug_info['api_error'] = array(
+                'status' => 'error',
+                'title' => 'API Error',
+                'message' => 'ASIN Data API returned error: ' . $data['error'],
+                'help' => 'Check your API key, credits, and request parameters'
+            );
             
             return array(
                 'success' => false,
-                'error' => $error_message,
-                'debug' => array_merge($debug_info, array(
-                    'no_results' => array(
-                        'status' => 'warning',
-                        'title' => 'No Results',
-                        'message' => $error_message,
-                        'response_keys' => array_keys($data)
-                    )
-                ))
+                'error' => $data['error'],
+                'debug' => $debug_info
+            );
+        }
+        
+        // Check if we have search results
+        if (!isset($data['search_results']) || !is_array($data['search_results'])) {
+            $debug_info['no_results'] = array(
+                'status' => 'warning',
+                'title' => 'No Results',
+                'message' => 'No search results found in API response',
+                'details' => array(
+                    'Response Keys' => implode(', ', array_keys($data)),
+                    'Search Term' => $query,
+                    'Marketplace' => $marketplace_info['name']
+                )
+            );
+            
+            return array(
+                'success' => true,
+                'products' => array(),
+                'debug' => $debug_info
             );
         }
         
@@ -137,29 +178,25 @@ class Compare_Pricing_Amazon_API {
                 break;
             }
             
-            // Extract price
-            $price = 0;
-            if (isset($item['price']['raw'])) {
-                $price = floatval($item['price']['raw']);
-            } elseif (isset($item['price']['symbol']) && isset($item['price']['value'])) {
-                $price = floatval(str_replace(',', '', $item['price']['value']));
+            // Skip items without price
+            if (!isset($item['price']['raw']) || $item['price']['raw'] <= 0) {
+                continue;
             }
             
-            if ($price > 0) {
-                $products[] = array(
-                    'title' => isset($item['title']) ? $item['title'] : 'Unknown Product',
-                    'price' => $price,
-                    'currency' => $marketplace_info['currency'],
-                    'url' => isset($item['link']) ? $item['link'] : '',
-                    'image' => isset($item['image']) ? $item['image'] : '',
-                    'source' => 'amazon',
-                    'marketplace' => $marketplace_info['name'],
-                    'country' => $country_code,
-                    'rating' => isset($item['rating']) ? $item['rating'] : null,
-                    'reviews' => isset($item['reviews_count']) ? $item['reviews_count'] : null
-                );
-                $results_processed++;
-            }
+            $products[] = array(
+                'title' => isset($item['title']) ? $item['title'] : 'Unknown Product',
+                'price' => floatval($item['price']['raw']),
+                'currency' => $marketplace_info['currency'],
+                'url' => isset($item['link']) ? $item['link'] : '',
+                'image' => isset($item['image']) ? $item['image'] : '',
+                'source' => 'amazon',
+                'marketplace' => $marketplace_info['name'],
+                'country' => $country_code,
+                'rating' => isset($item['rating']) ? $item['rating'] : null,
+                'reviews' => isset($item['reviews_count']) ? $item['reviews_count'] : null,
+                'asin' => isset($item['asin']) ? $item['asin'] : null
+            );
+            $results_processed++;
         }
         
         $debug_info['results'] = array(
@@ -169,7 +206,8 @@ class Compare_Pricing_Amazon_API {
             'details' => array(
                 'Total items in response' => count($data['search_results']),
                 'Items with valid prices' => count($products),
-                'Marketplace' => $marketplace_info['name']
+                'Marketplace' => $marketplace_info['name'],
+                'Search Term' => $query
             )
         );
         
@@ -211,20 +249,136 @@ class Compare_Pricing_Amazon_API {
             );
         }
         
-        // Test with a simple search
-        $result = $this->search_products('test', 1);
+        $debug_info = array();
         
-        if ($result['success']) {
-            // Add connection test specific info
-            $result['debug']['connection_test'] = array(
-                'status' => 'success',
+        // Test API key validity with a simple request
+        $test_params = array(
+            'api_key' => $this->api_key,
+            'type' => 'search',
+            'search_term' => 'test',
+            'amazon_domain' => 'amazon.com',
+            'max_page' => 1,
+            'output' => 'json'
+        );
+        
+        $debug_info['connection_test'] = array(
+            'status' => 'checking',
+            'title' => 'Connection Test',
+            'message' => 'Testing connection to ASIN Data API...'
+        );
+        
+        $response = wp_remote_post($this->base_url, array(
+            'body' => $test_params,
+            'timeout' => 15,
+            'headers' => array(
+                'User-Agent' => 'WordPress Compare Pricing Plugin Test',
+                'Content-Type' => 'application/x-www-form-urlencoded'
+            )
+        ));
+        
+        if (is_wp_error($response)) {
+            $debug_info['connection_test'] = array(
+                'status' => 'error',
                 'title' => 'Connection Test',
-                'message' => 'Successfully connected to ASIN Data API',
-                'note' => 'API is working correctly'
+                'message' => 'Failed to connect: ' . $response->get_error_message(),
+                'help' => 'Check your server\'s internet connection and firewall settings'
+            );
+            
+            return array(
+                'success' => false,
+                'error' => 'Connection failed',
+                'debug' => $debug_info
             );
         }
         
-        return $result;
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        
+        if ($response_code !== 200) {
+            $debug_info['connection_test'] = array(
+                'status' => 'error',
+                'title' => 'Connection Test',
+                'message' => 'API returned HTTP ' . $response_code,
+                'details' => array(
+                    'Response Code' => $response_code,
+                    'Response Body' => substr($body, 0, 200) . '...'
+                ),
+                'help' => 'Check your API key and account status at asindataapi.com'
+            );
+            
+            return array(
+                'success' => false,
+                'error' => 'HTTP ' . $response_code,
+                'debug' => $debug_info
+            );
+        }
+        
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $debug_info['connection_test'] = array(
+                'status' => 'error',
+                'title' => 'Connection Test',
+                'message' => 'Invalid JSON response: ' . json_last_error_msg(),
+                'details' => array(
+                    'Raw Response' => substr($body, 0, 300) . '...'
+                )
+            );
+            
+            return array(
+                'success' => false,
+                'error' => 'Invalid response format',
+                'debug' => $debug_info
+            );
+        }
+        
+        // Check for API errors
+        if (isset($data['error'])) {
+            $debug_info['connection_test'] = array(
+                'status' => 'error',
+                'title' => 'Connection Test',
+                'message' => 'API Error: ' . $data['error'],
+                'help' => $this->get_error_help($data['error'])
+            );
+            
+            return array(
+                'success' => false,
+                'error' => $data['error'],
+                'debug' => $debug_info
+            );
+        }
+        
+        // Success!
+        $debug_info['connection_test'] = array(
+            'status' => 'success',
+            'title' => 'Connection Test',
+            'message' => 'Successfully connected to ASIN Data API',
+            'details' => array(
+                'API Response' => 'Valid',
+                'Search Results' => isset($data['search_results']) ? count($data['search_results']) : 0,
+                'Credits Used' => isset($data['request_info']['credits_used']) ? $data['request_info']['credits_used'] : 'Unknown'
+            ),
+            'note' => 'API is working correctly'
+        );
+        
+        return array(
+            'success' => true,
+            'debug' => $debug_info
+        );
+    }
+    
+    private function get_error_help($error) {
+        $error_lower = strtolower($error);
+        
+        if (strpos($error_lower, 'invalid api key') !== false) {
+            return 'Your API key is invalid. Please check it at asindataapi.com';
+        } elseif (strpos($error_lower, 'credits') !== false || strpos($error_lower, 'limit') !== false) {
+            return 'You may have exceeded your API credit limit. Check your account at asindataapi.com';
+        } elseif (strpos($error_lower, 'rate') !== false) {
+            return 'You are making requests too quickly. Please wait and try again';
+        } else {
+            return 'Check your API key and account status at asindataapi.com';
+        }
     }
     
     private function log_debug($message) {
