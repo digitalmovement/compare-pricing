@@ -287,13 +287,16 @@ class Compare_Pricing_Amazon_API {
             'output' => 'json'
         );
         
+    
         $debug_info['connection_test'] = array(
             'status' => 'checking',
             'title' => 'Connection Test',
             'message' => 'Testing connection to ASIN Data API...'
         );
-        
-        $response = wp_remote_post($this->base_url, array(
+
+        $api_url = add_query_arg($test_params, $this->base_url);
+
+        $response = wp_remote_post($api_url, array(
             'body' => $test_params,
             'timeout' => 15,
             'headers' => array(
