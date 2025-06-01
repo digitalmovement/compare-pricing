@@ -210,7 +210,7 @@ class Compare_Pricing_Amazon_API {
             
             $products[] = array(
                 'title' => isset($item['title']) ? $item['title'] : 'Unknown Product',
-                'price' => floatval($item['price']['raw']),
+                'price' => strip_currency_symbols(floatval($item['price']['raw'])),
                 'currency' => $marketplace_info['currency'],
                 'url' => isset($item['link']) ? $item['link'] : '',
                 'image' => isset($item['image']) ? $item['image'] : '',
@@ -436,5 +436,9 @@ class Compare_Pricing_Amazon_API {
         );
         
         return isset($marketplaces[$country_code]) ? $marketplaces[$country_code] : $marketplaces['US'];
+    }
+
+    private function strip_currency_symbols($input) {
+        return preg_replace('/[\p{Sc}]/u', '', $input);
     }
 } 
