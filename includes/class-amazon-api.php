@@ -2,7 +2,7 @@
 class Compare_Pricing_Amazon_API {
     
     private $api_key;
-    private $base_url = 'https://api.asindataapi.com/request';
+    private $base_url = 'https://api.asindataapi.com/search';
     private $debug;
     
     public function __construct($options = array()) {
