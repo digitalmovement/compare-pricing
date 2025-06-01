@@ -210,7 +210,7 @@ class Compare_Pricing_Amazon_API {
             
             $products[] = array(
                 'title' => isset($item['title']) ? $item['title'] : 'Unknown Product',
-                'price' => strip_currency_symbols(floatval($item['price']['raw'])),
+                'price' => $this->strip_currency_symbols(floatval($item['price']['raw'])),
                 'currency' => $marketplace_info['currency'],
                 'url' => isset($item['link']) ? $item['link'] : '',
                 'image' => isset($item['image']) ? $item['image'] : '',
