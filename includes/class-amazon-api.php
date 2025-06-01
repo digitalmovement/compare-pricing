@@ -72,7 +72,9 @@ class Compare_Pricing_Amazon_API {
         
         $this->log_debug('Making POST request to: ' . $this->base_url);
         
-        $response = wp_remote_post($this->base_url, array(
+        $api_url = add_query_arg($params, $this->base_url);
+
+        $response = wp_remote_post($api_url, array(
             'body' => $params,
             'timeout' => 30,
             'headers' => array(
