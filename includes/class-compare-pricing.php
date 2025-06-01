@@ -538,9 +538,7 @@ class Compare_Pricing {
     /**
      * Fetch fresh results from APIs with location support
      */
-    private function fetch_fresh_results($gtin, $product_id, $location = array()) {
-        $country_code = isset($location['country_code']) ? $location['country_code'] : 'US';
-        
+    private function fetch_fresh_results($gtin, $product_id, $location) {
         // Get WooCommerce product title for matching
         $wc_product_title = $this->get_wc_product_title($product_id);
         
@@ -549,44 +547,48 @@ class Compare_Pricing {
         $errors = array();
         $api_attempts = 0;
         $successful_apis = 0;
+        
+        // Initialize filtering stats
         $filtering_stats = array(
             'total_found' => 0,
             'relevant_found' => 0,
             'ebay_total' => 0,
             'ebay_relevant' => 0,
             'amazon_total' => 0,
-            'amazon_relevant' => 0,
-            'location' => $location
+            'amazon_relevant' => 0
         );
-
-        // Try eBay API with location
-        if ($this->ebay_api) {
+        
+        // Get marketplace info for currency symbol
+        $marketplace_info = $this->get_marketplace_info($location['country_code']);
+        
+        // Search eBay
+        if (!empty(get_option('compare_pricing_ebay_app_id'))) {
             $api_attempts++;
-            $ebay_results = $this->ebay_api->search_products($gtin, 10, $country_code);
+            $ebay_result = $this->ebay_api->search_products($gtin, 10, $location['country_code']);
             
-            if (is_wp_error($ebay_results)) {
-                $errors['ebay'] = $ebay_results->get_error_message();
-            } elseif (!empty($ebay_results)) {
-                $all_results = array_merge($all_results, $ebay_results);
+            if (!is_wp_error($ebay_result) && !empty($ebay_result)) {
+                $all_results = array_merge($all_results, $ebay_result);
                 $successful_apis++;
-                $filtering_stats['ebay_total'] = count($ebay_results);
+                $filtering_stats['ebay_total'] = count($ebay_result);
                 
                 // Filter eBay results for relevance
                 if (!empty($wc_product_title)) {
-                    foreach ($ebay_results as $result) {
+                    foreach ($ebay_result as $result) {
                         if ($this->is_relevant_product($result['title'], $wc_product_title)) {
                             $filtered_results[] = $result;
                             $filtering_stats['ebay_relevant']++;
                         }
                     }
                     
-                    if (count($ebay_results) > 0 && $filtering_stats['ebay_relevant'] === 0) {
-                        $errors['ebay'] = 'Found ' . count($ebay_results) . ' products but none matched your product keywords';
+                    if (count($ebay_result) > 0 && $filtering_stats['ebay_relevant'] === 0) {
+                        $errors['ebay'] = 'Found ' . count($ebay_result) . ' products but none matched your product keywords';
                     }
                 } else {
-                    $filtered_results = array_merge($filtered_results, $ebay_results);
-                    $filtering_stats['ebay_relevant'] = count($ebay_results);
+                    $filtered_results = array_merge($filtered_results, $ebay_result);
+                    $filtering_stats['ebay_relevant'] = count($ebay_result);
                 }
+            } elseif (is_wp_error($ebay_result)) {
+                $errors['ebay'] = $ebay_result->get_error_message();
             } else {
                 $errors['ebay'] = 'No results found on eBay';
             }
@@ -594,11 +596,11 @@ class Compare_Pricing {
             $errors['ebay'] = 'eBay API not configured';
         }
 
-        // Try Amazon API with location
-        if ($this->amazon_api) {
+        // Search Amazon
+        if (!empty(get_option('compare_pricing_amazon_api_key'))) {
             $api_attempts++;
-            $amazon_result = $this->amazon_api->search_products($gtin, 10, $country_code);
-
+            $amazon_result = $this->amazon_api->search_products($gtin, 10, $location['country_code']);
+            
             if ($amazon_result['success'] && !empty($amazon_result['products'])) {
                 $all_results = array_merge($all_results, $amazon_result['products']);
                 $successful_apis++;
@@ -641,7 +643,9 @@ class Compare_Pricing {
                 'success' => false,
                 'error' => $failure_reason,
                 'filtering_stats' => $filtering_stats,
-                'errors' => $errors
+                'errors' => $errors,
+                'location' => $location,
+                'currency_symbol' => $marketplace_info['symbol']
             );
         }
 
@@ -679,7 +683,8 @@ class Compare_Pricing {
             'filtering_stats' => $filtering_stats,
             'wc_product_title' => $wc_product_title,
             'errors' => $errors,
-            'location' => $location
+            'location' => $location,
+            'currency_symbol' => $marketplace_info['symbol']
         );
     }
 
@@ -693,5 +698,25 @@ class Compare_Pricing {
         } else {
             return 'No relevant results found';
         }
+    }
+
+    /**
+     * Get marketplace information for different countries
+     */
+    private function get_marketplace_info($country_code) {
+        $marketplaces = array(
+            'US' => array('symbol' => '$', 'currency' => 'USD', 'name' => 'United States'),
+            'GB' => array('symbol' => '£', 'currency' => 'GBP', 'name' => 'United Kingdom'),
+            'DE' => array('symbol' => '€', 'currency' => 'EUR', 'name' => 'Germany'),
+            'FR' => array('symbol' => '€', 'currency' => 'EUR', 'name' => 'France'),
+            'IT' => array('symbol' => '€', 'currency' => 'EUR', 'name' => 'Italy'),
+            'ES' => array('symbol' => '€', 'currency' => 'EUR', 'name' => 'Spain'),
+            'CA' => array('symbol' => 'C$', 'currency' => 'CAD', 'name' => 'Canada'),
+            'AU' => array('symbol' => 'A$', 'currency' => 'AUD', 'name' => 'Australia'),
+            'JP' => array('symbol' => '¥', 'currency' => 'JPY', 'name' => 'Japan'),
+            'IN' => array('symbol' => '₹', 'currency' => 'INR', 'name' => 'India'),
+        );
+        
+        return isset($marketplaces[$country_code]) ? $marketplaces[$country_code] : $marketplaces['US'];
     }
 } 
