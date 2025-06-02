@@ -345,11 +345,110 @@ class Compare_Pricing {
         echo $source_badge;
         
         if (!empty($item['url'])) {
-            echo '<a href="' . esc_url($item['url']) . '" target="_blank" rel="noopener" class="view-item-btn">View Item</a>';
+            // Generate affiliate URL based on the item source and location
+            $affiliate_url = $this->generate_affiliate_url($item['url'], $item['source'], $item['country'] ?? 'US');
+            echo '<a href="' . esc_url($affiliate_url) . '" target="_blank" rel="noopener" class="view-item-btn">View Item</a>';
         }
         
         echo '</div>';
         echo '</div>';
+    }
+    
+    /**
+     * Generate affiliate URL for the given product link
+     */
+    private function generate_affiliate_url($original_url, $source, $country_code = 'US') {
+        // Don't include admin class in public-facing code, use the static method directly
+        $admin_class = 'Compare_Pricing_Admin';
+        if (!class_exists($admin_class)) {
+            require_once plugin_dir_path(__FILE__) . '../admin/class-admin.php';
+        }
+        
+        $affiliate_id = call_user_func(array($admin_class, 'get_affiliate_id'), $source, $country_code);
+        
+        if (empty($affiliate_id)) {
+            // No affiliate ID configured, return original URL
+            return $original_url;
+        }
+        
+        switch ($source) {
+            case 'ebay':
+                return $this->add_ebay_affiliate_params($original_url, $affiliate_id);
+            case 'amazon':
+                return $this->add_amazon_affiliate_params($original_url, $affiliate_id);
+            default:
+                return $original_url;
+        }
+    }
+    
+    /**
+     * Add eBay affiliate parameters to URL
+     */
+    private function add_ebay_affiliate_params($url, $affiliate_id) {
+        // eBay Partner Network uses campid parameter
+        $parsed_url = wp_parse_url($url);
+        
+        if (!$parsed_url) {
+            return $url;
+        }
+        
+        // Parse existing query parameters
+        $query_params = array();
+        if (isset($parsed_url['query'])) {
+            parse_str($parsed_url['query'], $query_params);
+        }
+        
+        // Add affiliate parameter
+        $query_params['campid'] = $affiliate_id;
+        
+        // Rebuild URL
+        $new_url = $parsed_url['scheme'] . '://' . $parsed_url['host'];
+        if (isset($parsed_url['path'])) {
+            $new_url .= $parsed_url['path'];
+        }
+        if (!empty($query_params)) {
+            $new_url .= '?' . http_build_query($query_params);
+        }
+        if (isset($parsed_url['fragment'])) {
+            $new_url .= '#' . $parsed_url['fragment'];
+        }
+        
+        return $new_url;
+    }
+    
+    /**
+     * Add Amazon affiliate parameters to URL
+     */
+    private function add_amazon_affiliate_params($url, $affiliate_id) {
+        // Amazon Associates uses tag parameter
+        $parsed_url = wp_parse_url($url);
+        
+        if (!$parsed_url) {
+            return $url;
+        }
+        
+        // Parse existing query parameters
+        $query_params = array();
+        if (isset($parsed_url['query'])) {
+            parse_str($parsed_url['query'], $query_params);
+        }
+        
+        // Add affiliate parameter
+        $query_params['tag'] = $affiliate_id;
+        
+        // Rebuild URL
+        $new_url = $parsed_url['scheme'] . '://' . $parsed_url['host'];
+        if (isset($parsed_url['path'])) {
+            $new_url .= $parsed_url['path'];
+        }
+        if (!empty($query_params)) {
+            $new_url .= '?' . http_build_query($query_params);
+        }
+        if (isset($parsed_url['fragment'])) {
+            $new_url .= '#' . $parsed_url['fragment'];
+        }
+        
+        return $new_url;
     }
     
     private function get_api_options() {
@@ -709,6 +808,17 @@ class Compare_Pricing {
         usort($filtered_results, function($a, $b) {
             return $a['price'] <=> $b['price'];
         });
+
+        // Add affiliate URLs to all results
+        for ($i = 0; $i < count($filtered_results); $i++) {
+            if (!empty($filtered_results[$i]['url'])) {
+                $filtered_results[$i]['url'] = $this->generate_affiliate_url(
+                    $filtered_results[$i]['url'], 
+                    $filtered_results[$i]['source'], 
+                    $location['country_code']
+                );
+            }
+        }
 
         // Get best deals
         $ebay_best = null;

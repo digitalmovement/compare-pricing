@@ -1660,8 +1660,8 @@ if (function_exists('compare_pricing_display')) {
         $affiliate_ids = get_option('compare_pricing_affiliate_ids', array());
         
         if (!$country_code) {
-            // Try to detect user's country (you'll need to implement this based on your location detection)
-            $country_code = 'US'; // Default fallback
+            // Try to detect user's country from various sources
+            $country_code = self::detect_user_country();
         }
         
         // Check if we have an affiliate ID for this platform and country
@@ -1672,6 +1672,95 @@ if (function_exists('compare_pricing_display')) {
         // Fallback to US if available
         if (isset($affiliate_ids[$platform]['US'])) {
             return $affiliate_ids[$platform]['US'];
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Detect user's country from various sources
+     */
+    private static function detect_user_country() {
+        // First try server-side geolocation methods
+        
+        // Method 1: CloudFlare CF-IPCountry header
+        if (isset($_SERVER['HTTP_CF_IPCOUNTRY'])) {
+            $country_code = strtoupper($_SERVER['HTTP_CF_IPCOUNTRY']);
+            if (strlen($country_code) === 2 && $country_code !== 'XX') {
+                return $country_code;
+            }
+        }
+        
+        // Method 2: Check if GeoIP extension is loaded and get country
+        if (function_exists('geoip_country_code_by_name')) {
+            $ip = self::get_user_ip();
+            if ($ip && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                $country_code = geoip_country_code_by_name($ip);
+                if ($country_code && strlen($country_code) === 2) {
+                    return $country_code;
+                }
+            }
+        }
+        
+        // Method 3: Check WordPress locale and map to country
+        $locale = get_locale();
+        $locale_to_country = array(
+            'en_US' => 'US',
+            'en_GB' => 'GB',
+            'de_DE' => 'DE',
+            'fr_FR' => 'FR',
+            'it_IT' => 'IT',
+            'es_ES' => 'ES',
+            'en_CA' => 'CA',
+            'en_AU' => 'AU',
+            'ja' => 'JP',
+            'hi_IN' => 'IN',
+            'zh_CN' => 'CN'
+        );
+        
+        if (isset($locale_to_country[$locale])) {
+            return $locale_to_country[$locale];
+        }
+        
+        // Extract country from locale pattern (e.g., pt_BR -> BR)
+        if (preg_match('/^[a-z]{2}_([A-Z]{2})$/', $locale, $matches)) {
+            return $matches[1];
+        }
+        
+        // Default fallback
+        return 'US';
+    }
+    
+    /**
+     * Get user's IP address
+     */
+    private static function get_user_ip() {
+        // Check various headers that might contain the real IP
+        $ip_headers = array(
+            'HTTP_CF_CONNECTING_IP',     // CloudFlare
+            'HTTP_CLIENT_IP',            // Proxy
+            'HTTP_X_FORWARDED_FOR',      // Load balancer/proxy
+            'HTTP_X_FORWARDED',          // Proxy
+            'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster balancer
+            'HTTP_FORWARDED_FOR',        // Proxy
+            'HTTP_FORWARDED',            // Proxy
+            'REMOTE_ADDR'                // Standard
+        );
+        
+        foreach ($ip_headers as $header) {
+            if (!empty($_SERVER[$header])) {
+                $ip = trim($_SERVER[$header]);
+                
+                // Handle comma-separated IPs (X-Forwarded-For can contain multiple IPs)
+                if (strpos($ip, ',') !== false) {
+                    $ip = trim(explode(',', $ip)[0]);
+                }
+                
+                // Validate IP
+                if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                    return $ip;
+                }
+            }
         }
         
         return null;
