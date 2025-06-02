@@ -41,6 +41,16 @@ class Compare_Pricing_Admin {
             array($this, 'admin_page')
         );
         
+        // Add Affiliate IDs submenu
+        add_submenu_page(
+            'compare-pricing',
+            'Affiliate IDs',
+            'Affiliate IDs',
+            'manage_options',
+            'compare-pricing-affiliates',
+            array($this, 'affiliates_page')
+        );
+        
         // Add Stats submenu
         add_submenu_page(
             'compare-pricing',
@@ -62,6 +72,9 @@ class Compare_Pricing_Admin {
         register_setting('compare_pricing_settings', 'compare_pricing_sandbox_mode');
         register_setting('compare_pricing_settings', 'compare_pricing_min_keyword_matches');
         register_setting('compare_pricing_settings', 'compare_pricing_debug_mode');
+        
+        // Register affiliate settings
+        register_setting('compare_pricing_affiliate_settings', 'compare_pricing_affiliate_ids');
         
         // eBay API Settings
         add_settings_section(
@@ -1459,5 +1472,208 @@ if (function_exists('compare_pricing_display')) {
             }
         }
         return 'Product with GTIN: ' . $gtin;
+    }
+
+    public function affiliates_page() {
+        // Handle form submission
+        if (isset($_POST['submit']) && wp_verify_nonce($_POST['affiliate_nonce'], 'save_affiliate_ids')) {
+            $affiliate_ids = array();
+            
+            // Process eBay affiliate IDs
+            if (isset($_POST['ebay_affiliate_ids'])) {
+                foreach ($_POST['ebay_affiliate_ids'] as $country => $id) {
+                    if (!empty($id)) {
+                        $affiliate_ids['ebay'][$country] = sanitize_text_field($id);
+                    }
+                }
+            }
+            
+            // Process Amazon affiliate IDs
+            if (isset($_POST['amazon_affiliate_ids'])) {
+                foreach ($_POST['amazon_affiliate_ids'] as $country => $id) {
+                    if (!empty($id)) {
+                        $affiliate_ids['amazon'][$country] = sanitize_text_field($id);
+                    }
+                }
+            }
+            
+            update_option('compare_pricing_affiliate_ids', $affiliate_ids);
+            echo '<div class="notice notice-success"><p>Affiliate IDs saved successfully!</p></div>';
+        }
+        
+        $affiliate_ids = get_option('compare_pricing_affiliate_ids', array());
+        
+        // Define supported regions
+        $regions = array(
+            'US' => 'United States',
+            'GB' => 'United Kingdom', 
+            'DE' => 'Germany',
+            'FR' => 'France',
+            'IT' => 'Italy',
+            'ES' => 'Spain',
+            'CA' => 'Canada',
+            'AU' => 'Australia',
+            'JP' => 'Japan',
+            'IN' => 'India'
+        );
+        
+        ?>
+        <div class="wrap">
+            <h1>Affiliate IDs Configuration</h1>
+            
+            <div class="notice notice-info">
+                <p><strong>About Affiliate IDs:</strong></p>
+                <ul>
+                    <li>Configure your affiliate/partner IDs for different regions to earn commissions from price comparison clicks</li>
+                    <li>eBay Partner Network IDs will be added to eBay links</li>
+                    <li>Amazon Associate IDs will be added to Amazon links</li>
+                    <li>Users will see links with the appropriate affiliate ID based on their detected location</li>
+                </ul>
+            </div>
+            
+            <form method="post" action="">
+                <?php wp_nonce_field('save_affiliate_ids', 'affiliate_nonce'); ?>
+                
+                <!-- eBay Affiliate IDs -->
+                <div class="affiliate-section">
+                    <h2>🛒 eBay Partner Network IDs</h2>
+                    <p>Enter your eBay Partner Network campaign IDs for each region. <a href="https://partnernetwork.ebay.com/" target="_blank">Get your IDs here</a></p>
+                    
+                    <table class="form-table">
+                        <?php foreach ($regions as $code => $name): ?>
+                            <tr>
+                                <th scope="row">
+                                    <label for="ebay_<?php echo strtolower($code); ?>"><?php echo esc_html($name); ?> (<?php echo $code; ?>)</label>
+                                </th>
+                                <td>
+                                    <input type="text" 
+                                           id="ebay_<?php echo strtolower($code); ?>" 
+                                           name="ebay_affiliate_ids[<?php echo $code; ?>]" 
+                                           value="<?php echo esc_attr(isset($affiliate_ids['ebay'][$code]) ? $affiliate_ids['ebay'][$code] : ''); ?>" 
+                                           class="regular-text" 
+                                           placeholder="Enter eBay Partner Network ID" />
+                                    <p class="description">Your eBay Partner Network campaign ID for <?php echo esc_html($name); ?></p>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                
+                <!-- Amazon Affiliate IDs -->
+                <div class="affiliate-section">
+                    <h2>📦 Amazon Associate IDs</h2>
+                    <p>Enter your Amazon Associate tracking IDs for each region. <a href="https://affiliate-program.amazon.com/" target="_blank">Join the Amazon Associates program</a></p>
+                    
+                    <table class="form-table">
+                        <?php foreach ($regions as $code => $name): ?>
+                            <tr>
+                                <th scope="row">
+                                    <label for="amazon_<?php echo strtolower($code); ?>"><?php echo esc_html($name); ?> (<?php echo $code; ?>)</label>
+                                </th>
+                                <td>
+                                    <input type="text" 
+                                           id="amazon_<?php echo strtolower($code); ?>" 
+                                           name="amazon_affiliate_ids[<?php echo $code; ?>]" 
+                                           value="<?php echo esc_attr(isset($affiliate_ids['amazon'][$code]) ? $affiliate_ids['amazon'][$code] : ''); ?>" 
+                                           class="regular-text" 
+                                           placeholder="Enter Amazon Associate ID" />
+                                    <p class="description">Your Amazon Associate tracking ID for <?php echo esc_html($name); ?></p>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                
+                <?php submit_button('Save Affiliate IDs'); ?>
+            </form>
+            
+            <!-- Usage Information -->
+            <div class="usage-info">
+                <h2>📋 How It Works</h2>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h3>Location Detection</h3>
+                        <p>The plugin automatically detects user location using their IP address and shows prices from the appropriate regional marketplace.</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>Affiliate Link Generation</h3>
+                        <p>When users click on price comparison results, they'll be redirected with your affiliate ID for that region, helping you earn commissions.</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>Fallback Behavior</h3>
+                        <p>If no affiliate ID is configured for a user's region, the link will use your US affiliate ID as a fallback, or show without affiliate tracking if none is set.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <style>
+        .affiliate-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .affiliate-section h2 {
+            margin-top: 0;
+            color: #0073aa;
+            border-bottom: 2px solid #0073aa;
+            padding-bottom: 10px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .info-card {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        
+        .info-card h3 {
+            margin-top: 0;
+            color: #0073aa;
+        }
+        
+        .usage-info {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        </style>
+        <?php
+    }
+
+    /**
+     * Get affiliate ID for a specific platform and country
+     */
+    public static function get_affiliate_id($platform, $country_code = null) {
+        $affiliate_ids = get_option('compare_pricing_affiliate_ids', array());
+        
+        if (!$country_code) {
+            // Try to detect user's country (you'll need to implement this based on your location detection)
+            $country_code = 'US'; // Default fallback
+        }
+        
+        // Check if we have an affiliate ID for this platform and country
+        if (isset($affiliate_ids[$platform][$country_code])) {
+            return $affiliate_ids[$platform][$country_code];
+        }
+        
+        // Fallback to US if available
+        if (isset($affiliate_ids[$platform]['US'])) {
+            return $affiliate_ids[$platform]['US'];
+        }
+        
+        return null;
     }
 } 
